@@ -15,6 +15,10 @@ const state = {
   metadataEditor: null,
   manifestEditor: null,
   classifierCatalog: [],
+  preflight: null,
+  preflightTimer: null,
+  preflightRequest: 0,
+  ancomChoice: null,
   directory: null,
   busy: false,
   jobId: '',
@@ -90,14 +94,18 @@ function configPayload() {
     trim_left_r: Number(readValue('trimLeftR', '0')),
     trunc_len_f: Number(readValue('truncLenF', '250')),
     trunc_len_r: Number(readValue('truncLenR', '220')),
-    sampling_depth: selectedSamplingMode() === 'auto' ? 'auto' : readValue('samplingDepth'),
+    sampling_depth: diversityWillBeSkipped() || selectedSamplingMode() === 'auto' ? 'auto' : readValue('samplingDepth'),
     qiime_env: state.qiimeEnv,
+    qiime_env_available: state.selectedEnvironment ? Boolean(state.selectedEnvironment.qiime_available) : undefined,
+    biom_available: state.selectedEnvironment ? Boolean(state.selectedEnvironment.biom_available) : undefined,
     no_trim: isChecked('noTrim'),
     no_filter: isChecked('noFilter'),
     no_figaro: isChecked('noFigaro'),
     skip_taxonomy: isChecked('skipTaxonomy'),
     skip_diversity: isChecked('skipDiversity'),
-    skip_ancom: isChecked('skipAncom'),
+    skip_ancom: $('skipAncom')?.dataset.autoDisabled === 'true' ? Boolean(state.ancomChoice) : isChecked('skipAncom'),
+    platform: state.platform,
+    figaro_available: state.selectedEnvironment ? Boolean(state.selectedEnvironment.figaro_available) : undefined,
   };
 }
 
@@ -128,6 +136,7 @@ function dataTypeLabel(value) {
 function showScan(scan, notify = true) {
   state.scan = scan;
   state.inputPath = scan.analysis_path || scan.path || '';
+  state.preflight = null;
   if ($('inputPath')) $('inputPath').value = state.inputPath;
   const isManifest = Boolean(scan.data_type?.startsWith('manifest'));
   const count = Number(scan.fastq_count || 0);
@@ -313,6 +322,7 @@ function addMetadataGroup() {
   input.value = '';
   renderMetadataGroups();
   renderMetadataTable();
+  markMetadataChanged();
 }
 
 function addMetadataColumn() {
@@ -330,6 +340,7 @@ function addMetadataColumn() {
   editor.types.push(type);
   editor.rows.forEach((row) => { row[name] = ''; });
   renderMetadataTable();
+  markMetadataChanged();
 }
 
 function removeMetadataColumn(name) {
@@ -343,6 +354,7 @@ function removeMetadataColumn(name) {
   editor.rows.forEach((row) => { delete row[name]; });
   renderMetadataGroups();
   renderMetadataTable();
+  markMetadataChanged();
 }
 
 function removeMetadataGroup(group) {
@@ -353,6 +365,7 @@ function removeMetadataGroup(group) {
   editor.rows.forEach((row) => { if (row[column] === group) row[column] = ''; });
   renderMetadataGroups();
   renderMetadataTable();
+  markMetadataChanged();
 }
 
 function addMetadataRow() {
@@ -362,6 +375,7 @@ function addMetadataRow() {
   editor.headers.forEach((header) => { row[header] = ''; });
   editor.rows.push(row);
   renderMetadataTable();
+  markMetadataChanged();
 }
 
 async function saveMetadataEditor() {
@@ -452,6 +466,7 @@ async function validateMetadata(path, silent = false) {
     $('metadataValidation').className = 'validation-note warn';
     if (!silent) toast(error.message);
   }
+  schedulePreflight();
   updateReadiness();
   return state.metadataValid;
 }
@@ -507,10 +522,10 @@ async function loadEnvironments() {
       state.selectedEnvironment = active;
       state.qiimeEnv = active.name;
       select.value = active.name;
-      $('environmentStatus').textContent = `✓ 已选中 ${environmentLabel(active)}，点击底部按钮即可运行。`;
+      $('environmentStatus').textContent = `✓ 已选中 ${environmentLabel(active)}；${active.biom_available ? 'biom 可用' : '未找到 biom，自动采样深度会跳过'}`;
       $('environmentStatus').className = 'environment-status good';
       $('qiimeValue').textContent = 'READY';
-      $('qiimeDesc').textContent = `已找到 ${usable.length} 个可用的 QIIME2 环境。`;
+      $('qiimeDesc').textContent = `已找到 ${usable.length} 个可用的 QIIME2 环境；${active.biom_available ? 'biom 可用' : '未找到 biom，自动采样深度会跳过'}。`;
       $('installHelper').hidden = true;
       markStep('runtime', 'done', '已就绪');
       updateFigaroStatus(active);
@@ -608,6 +623,7 @@ async function installQiime() {
 
 function setClassifier(path, label = '已选择分类器') {
   state.classifier = path || '';
+  state.preflight = null;
   $('classifierPath').value = state.classifier;
   $('classifierName').textContent = state.classifier ? `${label} · ${state.classifier}` : '未选择分类器';
   updateReadiness();
@@ -620,7 +636,9 @@ function renderClassifierCatalog() {
     target.innerHTML = '<div class="catalog-loading">暂时没有可用的官方分类器。</div>';
     return;
   }
-  target.innerHTML = state.classifierCatalog.map((item) => `<div class="catalog-card ${item.downloaded ? 'downloaded' : ''}"><div><div class="catalog-title"><strong>${escapeHtml(item.name)}</strong>${item.recommended ? '<span class="catalog-recommended">推荐</span>' : ''}</div><small>${escapeHtml(item.description)}</small><code>${escapeHtml(item.filename)}</code></div><button type="button" class="subtle-button classifier-action" data-classifier-id="${escapeHtml(item.id)}" data-downloaded="${item.downloaded}">${item.downloaded ? (state.classifier === item.path ? '当前使用' : '使用此分类器') : '下载到项目'}</button></div>`).join('');
+  const disabled = isChecked('skipTaxonomy') ? ' disabled' : '';
+  target.innerHTML = state.classifierCatalog.map((item) => `<div class="catalog-card ${item.downloaded ? 'downloaded' : ''}"><div><div class="catalog-title"><strong>${escapeHtml(item.name)}</strong>${item.recommended ? '<span class="catalog-recommended">推荐</span>' : ''}</div><small>${escapeHtml(item.description)}</small><code>${escapeHtml(item.filename)}</code></div><button type="button" class="subtle-button classifier-action" data-classifier-id="${escapeHtml(item.id)}" data-downloaded="${item.downloaded}"${disabled}>${item.downloaded ? (state.classifier === item.path ? '当前使用' : '使用此分类器') : '下载到项目'}</button></div>`).join('');
+  updateOptionDependencies();
 }
 
 async function loadClassifiers() {
@@ -635,6 +653,7 @@ async function loadClassifiers() {
 }
 
 async function downloadClassifier(id, button) {
+  if (isChecked('skipTaxonomy')) { toast('已跳过物种分类，先取消勾选后再选择分类器。'); return; }
   const item = state.classifierCatalog.find((value) => value.id === id);
   if (!item) return;
   if (item.downloaded) { setClassifier(item.path, '已选择项目内分类器'); renderClassifierCatalog(); return; }
@@ -705,52 +724,196 @@ function chooseCurrentDirectory() {
   toast('输出目录已选择。', true);
 }
 
+function metadataPath() { return state.metadata || readValue('metadataPath'); }
+
+function markMetadataChanged() {
+  state.metadataValid = false;
+  state.preflight = null;
+  updateMetadataCapability();
+  updateReadiness();
+}
+
+function diversityWillBeSkipped() {
+  if (isChecked('skipDiversity')) return true;
+  if (state.preflight) return Boolean(state.preflight.effective?.skip_diversity);
+  return !Boolean(metadataPath());
+}
+
+function updateMetadataCapability(metadata = state.preflight?.metadata) {
+  const box = $('metadataCapability');
+  if (!box) return;
+  const provided = Boolean(metadata?.provided || metadataPath());
+  const valid = Boolean(metadata?.usable ?? state.metadataValid);
+  const groupReady = Boolean(metadata?.group_ready);
+  box.className = `capability-note ${!provided ? 'info' : valid && groupReady ? 'good' : valid ? 'warn' : 'warn'}`;
+  if (!provided) {
+    box.innerHTML = '<strong>可以先不提供</strong><span>没有 metadata 时仍可做数据导入、DADA2 和基础物种分类；多样性与差异分析会自动跳过。</span>';
+  } else if (!valid) {
+    box.innerHTML = '<strong>metadata 还不能使用</strong><span>文件仍可保存，但本次会跳过依赖 metadata 的多样性与差异分析；修正后可重新运行。</span>';
+  } else if (!groupReady) {
+    box.innerHTML = `<strong>metadata 已通过，但没有可用分组</strong><span>${escapeHtml(metadata?.group_message || 'ANCOM 会自动跳过；多样性分析仍可执行。')}</span>`;
+  } else {
+    box.innerHTML = `<strong>metadata 已准备好</strong><span>${escapeHtml(metadata?.group_message || '可用于多样性和分组差异分析。')}</span>`;
+  }
+}
+
+function updateOptionDependencies() {
+  const skipTaxonomy = isChecked('skipTaxonomy');
+  const classifierControls = $('classifierControls');
+  classifierControls?.classList.toggle('dependency-disabled', skipTaxonomy);
+  ['classifierPicker', 'classifierPath'].forEach((id) => { if ($(id)) $(id).disabled = skipTaxonomy; });
+  $('classifierCatalog')?.querySelectorAll('button').forEach((button) => { button.disabled = skipTaxonomy; });
+  const classifierNote = $('classifierDependencyNote');
+  if (classifierNote) {
+    classifierNote.className = `capability-note ${skipTaxonomy ? 'info' : 'warn'}`;
+    classifierNote.innerHTML = skipTaxonomy
+      ? '<strong>物种分类已跳过</strong><span>分类器、官方分类器下载和本次 taxonomy 相关步骤都不会执行。</span>'
+      : '<strong>需要分类器</strong><span>勾选下方“跳过物种分类”后，这一整块会变灰并暂时不可操作。</span>';
+  }
+
+  const skipDiversity = diversityWillBeSkipped();
+  const samplingGroup = $('samplingGroup');
+  samplingGroup?.classList.toggle('dependency-disabled', skipDiversity);
+  $$('input[name="samplingMode"]').forEach((input) => { input.disabled = skipDiversity; });
+  if ($('samplingDepth')) $('samplingDepth').disabled = skipDiversity || selectedSamplingMode() !== 'custom';
+  if (skipDiversity && $('samplingDepthHelp')) {
+    $('samplingDepthHelp').textContent = isChecked('skipDiversity')
+      ? '已跳过多样性分析，本次不需要采样深度。取消勾选后可以选择自动推荐或自定义。'
+      : '没有可用 metadata，多样性分析会自动跳过，因此本次不需要采样深度。补齐 metadata 后即可恢复。';
+    $('samplingDepthHelp').className = 'field-help';
+  }
+
+  const checkbox = $('skipAncom');
+  if (checkbox) {
+    if (state.ancomChoice === null) state.ancomChoice = checkbox.checked;
+    const metadata = state.preflight?.metadata;
+    const ancomAvailable = !skipTaxonomy && Boolean(metadata?.usable && metadata?.group_ready);
+    if (!ancomAvailable) {
+      if (checkbox.dataset.autoDisabled !== 'true') state.ancomChoice = checkbox.checked;
+      checkbox.checked = true;
+      checkbox.disabled = true;
+      checkbox.dataset.autoDisabled = 'true';
+      $('skipAncomHelp').textContent = skipTaxonomy ? '需要 taxonomy；已自动跳过' : '需要完整的分类分组列；已自动跳过';
+    } else {
+      if (checkbox.dataset.autoDisabled === 'true') checkbox.checked = Boolean(state.ancomChoice);
+      checkbox.disabled = false;
+      delete checkbox.dataset.autoDisabled;
+      $('skipAncomHelp').textContent = '不做差异分析';
+    }
+  }
+}
+
+function renderPreflightPlan(plan) {
+  const blockers = plan?.blockers || [];
+  const blockedIds = new Set(blockers.map((item) => item.id));
+  const planItems = [
+    ...blockers.map((item) => ({ id: item.id, label: item.title, status: 'blocked', message: item.message })),
+    ...(plan?.steps || []).filter((step) => step.status === 'skipped' || (step.status === 'blocked' && !blockedIds.has(step.id))),
+  ];
+  const warnings = plan?.warnings || [];
+  const notice = $('planNotice');
+  const detail = $('preflightPlan');
+  if (notice) {
+    notice.hidden = !(warnings.length || planItems.length);
+    const title = blockers.length ? '还不能开始分析' : '这次不会执行全部步骤';
+    notice.innerHTML = notice.hidden ? '' : `<div class="plan-notice-title"><span>◌</span><strong>${title}</strong></div><div class="plan-notice-copy">${escapeHtml(blockers[0]?.message || warnings[0]?.message || planItems[0]?.message || '页面会按当前选项执行可用步骤。')}</div>`;
+  }
+  if (detail) {
+    detail.hidden = !(warnings.length || planItems.length);
+    if (!detail.hidden) {
+      const items = planItems.map((step) => `<div class="preflight-item ${escapeHtml(step.status)}"><span>${step.status === 'blocked' ? '!' : '→'}</span><div><strong>${escapeHtml(step.label)}</strong><small>${escapeHtml(step.message)}</small></div></div>`).join('');
+      const summary = blockers.length
+        ? `${blockers.length} 个阻塞项${warnings.length ? ` · ${warnings.length} 条提示` : ''}`
+        : warnings.length ? `${warnings.length} 条提示` : '已自动整理';
+      detail.innerHTML = `<div class="preflight-title"><span>本次分析计划</span><small>${summary}</small></div>${items}`;
+    }
+  }
+}
+
+function renderPreflight(plan) {
+  state.preflight = plan;
+  updateMetadataCapability(plan?.metadata);
+  updateOptionDependencies();
+  renderPreflightPlan(plan);
+  updateReadiness(false);
+}
+
+function schedulePreflight() {
+  window.clearTimeout(state.preflightTimer);
+  const requestId = ++state.preflightRequest;
+  state.preflightTimer = window.setTimeout(async () => {
+    try {
+      const result = await api('/api/preflight', { method: 'POST', body: JSON.stringify(configPayload()) });
+      if (requestId === state.preflightRequest) renderPreflight(result.preflight);
+    } catch {
+      updateMetadataCapability();
+      updateOptionDependencies();
+    }
+  }, 180);
+}
+
 function samplingIsValid() {
-  if (selectedSamplingMode() === 'auto') return true;
+  if (diversityWillBeSkipped() || selectedSamplingMode() === 'auto') return true;
   const value = Number(readValue('samplingDepth'));
   return Number.isInteger(value) && value > 0;
 }
 
 function updateSamplingMode() {
   const custom = selectedSamplingMode() === 'custom';
-  $('samplingDepth').disabled = !custom;
-  $('samplingDepth').setAttribute('aria-disabled', String(!custom));
-  $('samplingDepthHelp').textContent = custom
+  const skipDiversity = diversityWillBeSkipped();
+  updateOptionDependencies();
+  $('samplingDepth').disabled = skipDiversity || !custom;
+  $('samplingDepth').setAttribute('aria-disabled', String(skipDiversity || !custom));
+  $('samplingDepthHelp').textContent = skipDiversity
+    ? (isChecked('skipDiversity') ? '已跳过多样性分析，本次不需要采样深度。' : '没有可用 metadata，多样性分析会自动跳过，因此本次不需要采样深度。')
+    : custom
     ? '自定义值会直接用于多样性分析；建议不要高于大多数样本的测序深度。'
     : '自动模式会先查看每个样本的有效序列量，再选择尽量保留样本的共同深度；第一次分析推荐使用它。';
   $('samplingDepthHelp').className = `field-help ${samplingIsValid() ? '' : 'warn'}`;
   updateReadiness();
 }
 
-function updateReadiness() {
+function updateReadiness(requestPlan = true) {
+  updateOptionDependencies();
   const dataReady = Boolean(state.scan?.data_type && state.inputPath);
-  const metadataReady = Boolean(state.metadata && state.metadataValid);
+  const metadataProvided = Boolean(metadataPath());
+  const metadata = state.preflight?.metadata || {};
+  const metadataReady = !metadataProvided || Boolean(metadata.usable ?? state.metadataValid);
   const classifierReady = isChecked('skipTaxonomy') || Boolean(state.classifier || readValue('classifierPath'));
-  const depthReady = samplingIsValid();
+  const diversityWillSkip = diversityWillBeSkipped();
+  const depthReady = diversityWillSkip || samplingIsValid();
   const runtimeReady = Boolean(state.environmentReady && state.qiimeEnv);
+  const ancomWillSkip = isChecked('skipAncom') || isChecked('skipTaxonomy') || !metadata.usable || !metadata.group_ready;
   const checks = {
-    data: [dataReady, dataReady ? `${dataTypeLabel(state.scan.data_type)} · ${state.scan.fastq_count || 0} 个 FASTQ 引用` : '先选择并扫描 manifest / FASTQ'],
-    metadata: [metadataReady, metadataReady ? 'metadata 已校验，可以开始分析' : '请选择或生成 metadata，并完成校验'],
-    runtime: [runtimeReady, runtimeReady ? `使用 Conda 环境 ${state.qiimeEnv}` : '等待可用的 QIIME2 Conda 环境'],
-    classifier: [classifierReady, classifierReady ? (isChecked('skipTaxonomy') ? '已跳过物种分类' : '分类器已准备好') : '请选择分类器，或勾选跳过物种分类'],
-    sampling: [depthReady, depthReady ? (selectedSamplingMode() === 'auto' ? '自动计算，适合首次分析' : `固定深度 ${readValue('samplingDepth')}`) : '自定义采样深度必须是正整数'],
+    data: { ok: dataReady, blocking: true, level: dataReady ? 'good' : 'warn', text: dataReady ? `${dataTypeLabel(state.scan.data_type)} · ${state.scan.fastq_count || 0} 个 FASTQ 引用` : '先选择并扫描 manifest / FASTQ' },
+    metadata: { ok: metadataReady, blocking: false, level: !metadataProvided ? 'info' : metadataReady ? 'good' : 'warn', text: !metadataProvided ? '未提供；分组相关步骤会自动跳过' : metadataReady ? (metadata.group_ready ? `已校验 · ${metadata.group_column} 可用于分组` : '已校验，但没有两个完整分组值') : '文件未通过校验；依赖它的步骤会自动跳过' },
+    runtime: { ok: runtimeReady, blocking: true, level: runtimeReady ? 'good' : 'warn', text: runtimeReady ? `使用 Conda 环境 ${state.qiimeEnv}` : '等待可用的 QIIME2 Conda 环境' },
+    classifier: { ok: classifierReady, blocking: true, level: classifierReady ? 'good' : 'warn', text: classifierReady ? (isChecked('skipTaxonomy') ? '已跳过物种分类' : '分类器已准备好') : '请选择分类器，或勾选跳过物种分类' },
+    sampling: { ok: depthReady, blocking: !diversityWillSkip, level: diversityWillSkip ? 'info' : depthReady ? 'good' : 'warn', text: diversityWillSkip ? '本次跳过多样性，不需要采样深度' : depthReady ? (selectedSamplingMode() === 'auto' ? '自动计算，适合首次分析' : `固定深度 ${readValue('samplingDepth')}`) : '自定义采样深度必须是正整数' },
+    analysis: {
+      ok: !state.preflight || Boolean(state.preflight.can_run),
+      blocking: Boolean(state.preflight && !state.preflight.can_run),
+      level: state.preflight && !state.preflight.can_run ? 'warn' : ancomWillSkip || diversityWillSkip ? 'info' : 'good',
+      text: state.preflight?.blockers?.[0]?.message || (ancomWillSkip && diversityWillSkip ? '多样性与差异分析会按提示跳过' : ancomWillSkip ? 'ANCOM 会按提示跳过' : diversityWillSkip ? '多样性会按提示跳过' : '多样性和差异分析均已具备前置条件'),
+    },
   };
-  Object.entries(checks).forEach(([key, [ok, text]]) => {
+  Object.entries(checks).forEach(([key, check]) => {
     const item = document.querySelector(`[data-check="${key}"]`);
     if (!item) return;
-    item.classList.toggle('good', ok);
-    item.classList.toggle('warn', !ok);
+    item.className = `readiness-item ${check.level}`;
     const dot = item.querySelector('.check-dot');
     const copy = item.querySelector('.check-copy');
-    if (dot) dot.textContent = ok ? '✓' : '!';
-    if (copy) copy.textContent = text;
+    if (dot) dot.textContent = check.level === 'good' ? '✓' : check.level === 'info' ? 'i' : '!';
+    if (copy) copy.textContent = check.text;
   });
-  const ready = Object.values(checks).every(([ok]) => ok);
+  const ready = Object.values(checks).every((check) => !check.blocking || check.ok);
+  const hasNotes = Object.values(checks).some((check) => check.level === 'info' || check.level === 'warn');
   state.canRun = ready;
   $('runButton').disabled = !ready || state.busy;
-  $('runHint').textContent = ready ? '所有必要信息已准备好，点击一次即可启动完整分析。' : '还差一步：按照上面的提示补齐必要信息。';
-  $('readyBadge').textContent = ready ? 'READY' : 'NEEDS SETUP';
-  $('readyBadge').className = `ready-badge ${ready ? 'good' : 'warn'}`;
+  $('runHint').textContent = ready ? (hasNotes ? '可以运行；页面会按提示自动跳过不具备条件的步骤。' : '所有必要信息已准备好，点击一次即可启动完整分析。') : '还差一步：按照上面的提示补齐必要信息。';
+  $('readyBadge').textContent = ready ? (hasNotes ? 'READY · WITH NOTES' : 'READY') : 'NEEDS SETUP';
+  $('readyBadge').className = `ready-badge ${ready ? (hasNotes ? 'info' : 'good') : 'warn'}`;
+  if (requestPlan) schedulePreflight();
 }
 
 function renderJob(job) {
@@ -773,7 +936,7 @@ async function runAnalysis() {
   state.metadata = readValue('metadataPath');
   state.classifier = state.classifier || readValue('classifierPath');
   if (!state.scan?.data_type || !state.inputPath) { toast('请先选择并扫描数据。'); return; }
-  if (state.metadata && !state.metadataValid && !(await validateMetadata(state.metadata))) return;
+  if (state.metadata && !state.metadataValid) await validateMetadata(state.metadata);
   updateReadiness();
   if (!state.canRun) { toast('请按照页面上的提示补齐设置。'); return; }
   const data = configPayload();
@@ -821,7 +984,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateSamplingMode();
   bind('scanButton', 'click', scan);
   bind('inputPath', 'keydown', (event) => { if (event.key === 'Enter') scan(); });
-  bind('inputPath', 'input', () => { state.inputPath = readValue('inputPath'); state.scan = null; updateReadiness(); });
+  bind('inputPath', 'input', () => { state.inputPath = readValue('inputPath'); state.scan = null; state.preflight = null; updateReadiness(); });
   bind('fastqPicker', 'change', (event) => uploadFiles(event.target, 'fastq'));
   bind('manifestPicker', 'change', (event) => uploadFiles(event.target, 'manifest'));
   bind('classifierPicker', 'change', (event) => uploadFiles(event.target, 'classifier'));
@@ -843,19 +1006,23 @@ document.addEventListener('DOMContentLoaded', () => {
     state.qiimeEnv = event.target.value;
     state.selectedEnvironment = state.environments.find((environment) => environment.name === state.qiimeEnv) || null;
     state.environmentReady = Boolean(state.selectedEnvironment?.qiime_available);
+    state.preflight = null;
     $('environmentStatus').textContent = state.qiimeEnv ? `✓ 已选择 ${state.qiimeEnv}` : '请选择包含 QIIME2 的环境';
     $('environmentStatus').className = `environment-status ${state.qiimeEnv ? 'good' : 'warn'}`;
     updateFigaroStatus(state.selectedEnvironment);
     updateReadiness();
+    schedulePreflight();
   });
   bind('installVersion', 'change', updateInstallSummary);
   bind('installDistribution', 'change', updateInstallSummary);
   bind('installEnvironmentName', 'input', updateInstallSummary);
   bind('installButton', 'click', installQiime);
   bind('figaroInstallButton', 'click', installFigaro);
-  bind('metadataPath', 'input', () => { state.metadata = readValue('metadataPath'); state.metadataValid = false; $('metadataName').textContent = state.metadata ? '等待校验服务器路径' : '未选择 metadata'; updateReadiness(); });
+  bind('metadataPath', 'input', () => { state.metadata = readValue('metadataPath'); state.metadataValid = false; state.preflight = null; $('metadataName').textContent = state.metadata ? '等待校验服务器路径' : '未选择 metadata'; updateMetadataCapability(); updateReadiness(); });
   bind('metadataPath', 'blur', () => validateMetadata(readValue('metadataPath'), true));
-  bind('classifierPath', 'input', () => { state.classifier = readValue('classifierPath'); $('classifierName').textContent = state.classifier ? '使用服务器路径' : '未选择分类器'; updateReadiness(); });
+  bind('classifierPath', 'input', () => { state.classifier = readValue('classifierPath'); state.preflight = null; $('classifierName').textContent = state.classifier ? '使用服务器路径' : '未选择分类器'; updateReadiness(); });
+  bind('outputPath', 'input', () => { state.preflight = null; updateReadiness(); });
+  ['primerF', 'primerR', 'truncLenF', 'truncLenR', 'minQuality', 'minFrequency'].forEach((id) => bind(id, 'input', updateReadiness));
   bind('outputPickerButton', 'click', () => loadDirectories(readValue('outputPath')));
   bind('directoryCloseButton', 'click', closeDirectoryPicker);
   bind('directoryGoButton', 'click', () => loadDirectories(readValue('directoryPathInput')));
@@ -874,22 +1041,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const target = event.target.closest('[data-meta-row][data-meta-column]');
     if (!target || !state.metadataEditor) return;
     state.metadataEditor.rows[Number(target.dataset.metaRow)][target.dataset.metaColumn] = target.value;
-    state.metadataValid = false;
-    updateReadiness();
+    markMetadataChanged();
   });
   $('metadataEditorTable')?.addEventListener('change', (event) => {
     const target = event.target.closest('[data-meta-row][data-meta-column]');
     if (!target || !state.metadataEditor) return;
     state.metadataEditor.rows[Number(target.dataset.metaRow)][target.dataset.metaColumn] = target.value;
     if (target.dataset.metaColumn === metadataGroupColumn()) renderMetadataGroups();
-    state.metadataValid = false;
-    updateReadiness();
+    markMetadataChanged();
   });
   $('metadataEditorTable')?.addEventListener('click', (event) => {
     const column = event.target.closest('[data-remove-column]')?.dataset.removeColumn;
     if (column) removeMetadataColumn(column);
     const row = event.target.closest('[data-remove-metadata-row]')?.dataset.removeMetadataRow;
-    if (row !== undefined && window.confirm('确定删除这个样本吗？')) { state.metadataEditor.rows.splice(Number(row), 1); renderMetadataGroups(); renderMetadataTable(); state.metadataValid = false; updateReadiness(); }
+    if (row !== undefined && window.confirm('确定删除这个样本吗？')) { state.metadataEditor.rows.splice(Number(row), 1); renderMetadataGroups(); renderMetadataTable(); markMetadataChanged(); }
   });
   $('manifestEditorTable')?.addEventListener('input', (event) => {
     const target = event.target.closest('[data-manifest-row][data-manifest-column]');
@@ -905,7 +1070,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('directoryModal')?.addEventListener('click', (event) => { if (event.target.id === 'directoryModal') closeDirectoryPicker(); });
   $$('input[name="samplingMode"]').forEach((input) => input.addEventListener('change', updateSamplingMode));
-  ['samplingDepth', 'skipTaxonomy', 'noTrim', 'noFilter', 'noFigaro', 'skipDiversity', 'skipAncom'].forEach((id) => bind(id, 'input', updateReadiness));
+  ['samplingDepth', 'noTrim', 'noFilter', 'noFigaro'].forEach((id) => bind(id, 'input', updateReadiness));
+  bind('skipTaxonomy', 'change', () => { updateOptionDependencies(); updateReadiness(); schedulePreflight(); });
+  bind('skipDiversity', 'change', () => { updateSamplingMode(); schedulePreflight(); });
+  bind('skipAncom', 'change', (event) => { state.ancomChoice = event.target.checked; updateReadiness(); schedulePreflight(); });
   loadClassifiers();
   checkHealth();
 });

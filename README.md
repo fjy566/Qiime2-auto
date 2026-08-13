@@ -10,7 +10,7 @@
 - 从 FASTQ 文件名生成 QIIME2 manifest，修复单端/双端常见命名问题。
 - Web picker 支持一次选择多个 FASTQ，也支持选择任意后缀的 manifest、分类器 `.qza` 和 metadata 文件。
 - 根据 manifest 生成 metadata 模板，并在页面里按样本分组；支持新建/删除组、添加 categorical/numeric 列、预览、编辑和保存。
-- metadata 遵循 QIIME2 TSV 规则：第一列是样本 ID，可选 `#q2:types` 声明类型；空单元格按缺失值处理，不会被误判成格式错误。
+- metadata 遵循 QIIME2 TSV 规则：第一列是样本 ID，可选 `#q2:types` 声明类型；空单元格按缺失值处理，不会被误判成格式错误。metadata 本身是可选的，缺少时会自动跳过依赖样本分组的多样性和 ANCOM 分析。
 - manifest 支持预览、逐行编辑、添加/删除样本和保存；任意后缀都按表头内容识别，双端会统计实际引用的 R1 + R2 文件数。
 - 提供 QIIME2 官方分类器目录：SILVA 138 99% 全长 16S 默认推荐，可一键下载到项目 `classifiers/` 文件夹；也保留本地 `.qza` picker。
 - 保留原来的命令行接口，并增加 `scan`、`serve`、`envs` 和 `install` 入口作为备用和排错工具。
@@ -42,7 +42,7 @@ python -m qiime2auto serve
 
 1. 选择 manifest 或一次选择多个 FASTQ；查看数据类型、FASTQ 数量和双端判断。
 2. 需要时在 manifest 编辑器里预览、改路径、添加/删除样本并保存。
-3. 生成 metadata 后，在表格中为每个样本选择分组，也可以添加时间点、地点、处理方式等列。
+3. 需要分组分析时生成或选择 metadata，在表格中为每个样本选择分组，也可以添加时间点、地点、处理方式等列。
 4. 选择 QIIME2 Conda 环境、项目内分类器和服务器输出目录；需要时一键安装 QIIME2/Figaro。
 5. 通过启动前检查后，点击一次“开始完整分析”。
 
@@ -70,6 +70,12 @@ sample02   treatment   8
 ```
 
 参考：[QIIME2 Metadata 说明](https://docs.qiime2.org/2024.10/tutorials/metadata/)。
+
+### metadata 缺少或不完整时会怎样
+
+metadata 不是所有步骤的硬性前置条件。没有 metadata 时，程序仍可以执行数据导入、DADA2 去噪和基础物种分类；需要样本信息的 core metrics 多样性分析、采样深度和 ANCOM 差异分析会在启动前检查中明确标记为“自动跳过”。
+
+如果 metadata 文件能读取，但没有至少两个完整值的 categorical 列，core metrics 仍可以执行，ANCOM 会单独跳过。修正 metadata 后重新点击分析即可恢复这些步骤；前端的“本次分析计划”会显示本次实际会运行和跳过的内容。
 
 ### Conda/QIIME2 环境
 
@@ -141,6 +147,8 @@ python qiime2_auto.py \
   --sampling-depth 10000
 ```
 
+`--metadata` 是可选参数。省略它仍可完成导入、DADA2 和物种分类（前提是提供分类器），但多样性、采样深度和 ANCOM 会按启动前检查自动跳过；如果想执行这些分析，请提供包含至少两个完整分组值的 metadata。
+
 如果想在 CLI 中检查参数和命令，不调用外部工具：
 
 ```bash
@@ -186,7 +194,7 @@ results/
 
 ## 参数分组
 
-- 输入：`-i/--input`、`-o/--output`、`--barcodes`、`--metadata`
+- 输入：`-i/--input`、`-o/--output`、`--barcodes`、可选 `--metadata`
 - 模板：`--generate-manifest`、`--paired-end`、`--single-end`、`--generate-metadata`、`--metadata-columns`
 - 引物：`--primer-f`、`--primer-r`、`--primer-metadata`
 - 质量与 DADA2：`--trim-left-f/r`、`--trunc-len-f/r`、`--max-ee`、`--trunc-q`、`--min-quality`、`--min-frequency`
@@ -220,6 +228,10 @@ Python 3.9+ 即可运行核心功能。当前环境是否安装 pandas、numpy�
 **为什么 metadata 校验不通过？**
 
 优先检查：第一列是不是 `sample-id`/`#SampleID`，样本 ID 是否重复，数值列里是否混入文字。普通 metadata 单元格为空是合法的缺失值；但 `sample-id` 不能为空，重复 ID 仍然会阻止分析。
+
+**没有 metadata 可以运行吗？**
+
+可以。程序会在启动前告诉你哪些步骤会自动跳过：导入、DADA2 和基础物种分类仍可执行；多样性、采样深度和 ANCOM 需要样本信息，因此不会伪装成已经完成。
 
 **为什么 `sampling-depth auto` 没有结果？**
 

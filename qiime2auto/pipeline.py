@@ -14,6 +14,7 @@ from typing import Any
 
 from .config import AnalysisConfig
 from .io import create_output_structure, generate_report
+from .preflight import inspect_metadata_capabilities
 from .runner import CommandError, CommandRunner
 
 
@@ -103,25 +104,53 @@ class PipelineService:
                 figaro_data = self._step("Figaro 截断建议", lambda: self._run_figaro(demux_file))
 
             table, rep_seqs = self._step("DADA2 去噪", lambda: self._run_dada2(demux_file, figaro_data))
-            depth_info = self._step("计算采样深度", lambda: self._calculate_sampling_depth(table))
+            metadata_capabilities = inspect_metadata_capabilities(self.config.metadata)
+
+            depth_info = None
+            if self.options.skip_diversity:
+                self.steps.append({"name": "采样深度", "status": "skipped", "output": "已跳过多样性分析，不需要采样深度"})
+            elif not metadata_capabilities["usable"]:
+                self.steps.append({"name": "采样深度", "status": "skipped", "output": "没有可用 metadata，不需要计算采样深度"})
+            else:
+                depth_step_index = len(self.steps)
+                depth_info = self._step("计算采样深度", lambda: self._calculate_sampling_depth(table))
+                if depth_info is None:
+                    self.steps[depth_step_index] = {"name": "采样深度", "status": "skipped", "output": "无法自动确定采样深度，已跳过多样性分析；请改用正整数后重试"}
 
             taxonomy = None
-            if not self.options.skip_taxonomy:
+            if self.options.skip_taxonomy:
+                self.steps.append({"name": "物种分类", "status": "skipped", "output": "你选择了跳过物种分类"})
+            else:
                 taxonomy = self._step("物种分类", lambda: self._run_taxonomy(rep_seqs, table))
                 if not taxonomy:
                     print("⚠️ 分类失败，已跳过依赖分类结果的步骤")
 
             diversity_dir = None
-            if not self.options.skip_diversity:
-                diversity_dir = self._step("多样性分析", lambda: self._run_diversity(table, rep_seqs, depth_info))
+            if self.options.skip_diversity:
+                self.steps.append({"name": "多样性分析", "status": "skipped", "output": "你选择了跳过多样性分析"})
+            elif metadata_capabilities["usable"]:
+                if depth_info is None:
+                    self.steps.append({"name": "多样性分析", "status": "skipped", "output": "无法确定采样深度，已跳过 core metrics"})
+                else:
+                    diversity_dir = self._step("多样性分析", lambda: self._run_diversity(table, rep_seqs, depth_info))
+            else:
+                self.steps.append({"name": "多样性分析", "status": "skipped", "output": "没有可用 metadata，已跳过 core metrics"})
 
             ancom = None
-            if not self.options.skip_ancom and taxonomy:
+            if self.options.skip_ancom:
+                self.steps.append({"name": "ANCOM 差异分析", "status": "skipped", "output": "你选择了跳过 ANCOM 差异分析"})
+            elif not taxonomy:
+                self.steps.append({"name": "ANCOM 差异分析", "status": "skipped", "output": "没有 taxonomy，已跳过差异分析"})
+            elif self._group_column():
                 ancom = self._step("ANCOM 差异分析", lambda: self._run_ancom(table, taxonomy))
+            else:
+                self.steps.append({"name": "ANCOM 差异分析", "status": "skipped", "output": "没有至少两个完整值的 categorical 分组列"})
 
             rooted_tree = self.output_dir / "06_phylogeny" / "rooted-tree.qza"
-            if rooted_tree.exists() or self.options.dry_run:
+            if not self.options.skip_diversity and metadata_capabilities["usable"] and depth_info is not None and (rooted_tree.exists() or self.options.dry_run):
                 self._step("导出系统发育树", lambda: self._visualize_phylogeny(rooted_tree))
+            else:
+                self.steps.append({"name": "系统发育树", "status": "skipped", "output": "多样性分析未执行，已跳过系统发育树导出"})
 
             params = {**self.config.as_dict(), **self.options.__dict__}
             report = generate_report(self.output_dir, params, depth_info)
@@ -238,6 +267,8 @@ class PipelineService:
     def _calculate_sampling_depth(self, table_qza: str) -> dict | None:
         if self.config.sampling_depth != "auto":
             return {"final_depth": int(self.config.sampling_depth), "source": "user"}
+        if self.options.dry_run:
+            return {"final_depth": self.config.min_absolute_depth, "source": "dry-run"}
         try:
             import biom  # optional dependency
         except ImportError:
@@ -261,21 +292,24 @@ class PipelineService:
                 shutil.rmtree(export_dir)
 
     def _group_column(self) -> str:
-        from .io import _read_table
-
-        headers, _ = _read_table(Path(self.config.metadata))
-        columns = [column for column in headers if column != "sample-id"]
-        if not columns:
-            raise ValueError("metadata 至少需要一个分组列")
-        return columns[0]
+        capabilities = inspect_metadata_capabilities(self.config.metadata)
+        return str(capabilities["group_column"]) if capabilities["group_ready"] else ""
 
     def _run_taxonomy(self, rep_seqs: str, table: str) -> str | None:
         taxonomy = self.output_dir / "04_taxonomy" / "taxonomy.qza"
         self.runner.run(["qiime", "feature-classifier", "classify-sklearn", "--i-classifier", self.config.classifier, "--i-reads", rep_seqs, "--o-classification", str(taxonomy), "--p-n-jobs", str(os.cpu_count() or 4)], "taxonomy.log")
-        self.runner.run(["qiime", "taxa", "barplot", "--i-table", table, "--i-taxonomy", str(taxonomy), "--m-metadata-file", self.config.metadata, "--o-visualization", str(self.output_dir / "07_visualization" / "taxonomy-barplot.qzv")], "taxonomy.log")
+        barplot = ["qiime", "taxa", "barplot", "--i-table", table, "--i-taxonomy", str(taxonomy)]
+        if Path(self.config.metadata).is_file():
+            barplot.extend(["--m-metadata-file", self.config.metadata])
+        barplot.extend(["--o-visualization", str(self.output_dir / "07_visualization" / "taxonomy-barplot.qzv")])
+        self.runner.run(barplot, "taxonomy.log")
         genus_table = self.output_dir / "04_taxonomy" / "genus-table.qza"
         self.runner.run(["qiime", "taxa", "collapse", "--i-table", table, "--i-taxonomy", str(taxonomy), "--p-level", "6", "--o-collapsed-table", str(genus_table)], "taxonomy.log")
-        self.runner.run(["qiime", "feature-table", "heatmap", "--i-table", str(genus_table), "--m-sample-metadata-file", self.config.metadata, "--m-sample-metadata-column", self._group_column(), "--o-visualization", str(self.output_dir / "07_visualization" / "taxonomy-heatmap.qzv")], "taxonomy.log")
+        group_column = self._group_column()
+        if group_column:
+            self.runner.run(["qiime", "feature-table", "heatmap", "--i-table", str(genus_table), "--m-sample-metadata-file", self.config.metadata, "--m-sample-metadata-column", group_column, "--o-visualization", str(self.output_dir / "07_visualization" / "taxonomy-heatmap.qzv")], "taxonomy.log")
+        else:
+            print("⚠️ 没有可用分组列，已跳过 taxonomy heatmap。")
         return str(taxonomy)
 
     def _run_diversity(self, table: str, rep_seqs: str, depth_info: dict | None) -> str | None:

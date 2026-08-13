@@ -77,6 +77,29 @@ class WebSmokeTests(unittest.TestCase):
             result = self.post_json("/api/validate-metadata", {"path": str(metadata)})
             self.assertTrue(result["ok"])
 
+    def test_preflight_explains_optional_metadata_steps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.tsv"
+            classifier = root / "classifier.qza"
+            manifest.write_text("sample-id\tabsolute-filepath\nS1\tS1.fastq.gz\n", encoding="utf-8")
+            classifier.write_bytes(b"placeholder")
+            result = self.post_json("/api/preflight", {
+                "input_path": str(manifest),
+                "output_dir": str(root / "results"),
+                "data_type": "manifest_single",
+                "qiime_env": "qiime2-test",
+                "classifier": str(classifier),
+                "platform": "posix",
+            })
+            self.assertTrue(result["preflight"]["can_run"])
+            self.assertTrue(result["preflight"]["effective"]["skip_diversity"])
+            self.assertTrue(result["preflight"]["effective"]["skip_ancom"])
+
+    def test_preview_command_omits_optional_metadata(self):
+        result = self.post_json("/api/preview", {"input_path": "/tmp/manifest.tsv", "output_dir": "/tmp/results"})
+        self.assertNotIn("--metadata", result["command"])
+
     def test_environment_and_install_preview_endpoints(self):
         options = self.get_json("/api/install-options")
         self.assertIn("2024.10", options["versions"])

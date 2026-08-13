@@ -60,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-depth-percent", type=float, default=DEFAULT_CONFIG["min_depth_percent"], help="自动采样深度相对中位数比例")
     parser.add_argument("--min-absolute-depth", type=int, default=DEFAULT_CONFIG["min_absolute_depth"], help="自动采样深度的绝对下限")
     parser.add_argument("--classifier", default=DEFAULT_CONFIG["classifier"], help="QIIME2 sklearn 分类器 .qza 路径")
-    parser.add_argument("--metadata", default=DEFAULT_CONFIG["metadata"], help="样本 metadata.tsv 路径")
+    parser.add_argument("--metadata", default="", help="样本 metadata.tsv 路径；不提供时会自动跳过需要分组的步骤")
     parser.add_argument("--no-trim", action="store_true", help="跳过引物去除")
     parser.add_argument("--no-filter", action="store_true", help="跳过低质量过滤")
     parser.add_argument("--no-figaro", action="store_true", help="跳过 Figaro 截断优化")
@@ -124,13 +124,14 @@ def run_legacy_cli(args: argparse.Namespace) -> int:
         print(f"✅ Metadata 模板已生成: {result}")
         return 0
 
-    metadata_result = validate_metadata_details(args.metadata)
-    if not metadata_result.valid:
-        print("❌ metadata 校验失败:")
-        for error in metadata_result.errors or []:
-            print(f"  - {error}")
-        print("提示：可以先用 `--generate-metadata` 生成模板，再补齐分组信息。")
-        return 2
+    if args.metadata:
+        metadata_result = validate_metadata_details(args.metadata)
+        if not metadata_result.valid:
+            print("❌ metadata 校验失败:")
+            for error in metadata_result.errors or []:
+                print(f"  - {error}")
+            print("提示：可以先用 `--generate-metadata` 生成模板，再补齐分组信息。")
+            return 2
 
     data_type = detect_data_type(input_path)
     if not data_type:

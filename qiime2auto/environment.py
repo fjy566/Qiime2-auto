@@ -28,6 +28,8 @@ class CondaEnvironment:
     figaro_available: bool = False
     figaro_version: str | None = None
     figaro_probe_error: str | None = None
+    biom_available: bool = False
+    biom_probe_error: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -80,6 +82,16 @@ def _probe_environment(conda: str, environment: CondaEnvironment) -> CondaEnviro
         environment.figaro_version = figaro_output.splitlines()[0] if figaro_output else "可用"
     else:
         environment.figaro_probe_error = figaro_output[-300:] or f"退出码 {figaro_result.returncode}"
+    try:
+        biom_result = _run([conda, "run", "--no-capture-output", *selector, "python", "-c", "import biom"], timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        environment.biom_probe_error = str(exc)
+        return environment
+    if biom_result.returncode == 0:
+        environment.biom_available = True
+    else:
+        biom_output = "\n".join(value for value in (biom_result.stdout, biom_result.stderr) if value).strip()
+        environment.biom_probe_error = biom_output[-300:] or f"退出码 {biom_result.returncode}"
     return environment
 
 

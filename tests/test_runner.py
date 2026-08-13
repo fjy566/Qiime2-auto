@@ -51,6 +51,24 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(result.success)
             self.assertTrue(Path(result.report).exists())
 
+    def test_pipeline_skips_sampling_depth_without_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.tsv"
+            manifest.write_text("sample-id\tabsolute-filepath\nS1\tC:/S1.fastq.gz\n", encoding="utf-8")
+            config = AnalysisConfig(metadata="", sampling_depth=1000)
+            options = PipelineOptions(
+                input_path=str(manifest), output_dir=str(root / "results"), data_type="manifest_single",
+                no_trim=True, no_filter=True, no_figaro=True, skip_taxonomy=True,
+                dry_run=True,
+            )
+            result = run_analysis(config, options)
+            self.assertTrue(result.success)
+            names = [step["name"] for step in result.steps]
+            self.assertIn("采样深度", names)
+            self.assertNotIn("计算采样深度", names)
+            self.assertTrue(any(step["status"] == "skipped" and step["name"] == "多样性分析" for step in result.steps))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,7 +17,9 @@ DEFAULT_CONFIG = {
     "min_sample_retain": 0.95,
     "min_depth_percent": 0.85,
     "min_absolute_depth": 1000,
-    "metadata": "metadata.tsv",
+    # Metadata is optional. The pipeline can still import, denoise and
+    # classify without it; group-dependent steps are skipped with a note.
+    "metadata": "",
     "phred_offset": 33,
     "barcode_length": 12,
     "min_quality": 20,

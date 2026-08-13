@@ -20,6 +20,7 @@ from .config import AnalysisConfig
 from .environment import discover_environments, figaro_install_command, install_command, install_options
 from .io import generate_manifest, generate_metadata_template, inspect_manifest, is_fastq, read_sample_ids, reconcile_manifest, scan_input, validate_metadata_details
 from .pipeline import PipelineOptions, run_analysis
+from .preflight import build_preflight
 from .runner import command_text
 from .table_editor import metadata_preview, preview_manifest, save_manifest_table, save_metadata_table
 
@@ -41,7 +42,9 @@ def _json_bytes(value: dict) -> bytes:
 def _preview_command(data: dict) -> str:
     input_path = data.get("input_path", "<input>")
     output_path = data.get("output_dir", "qiime2_analysis")
-    parts = ["python", "qiime2_auto.py", "-i", input_path, "-o", output_path, "--metadata", data.get("metadata", "metadata.tsv")]
+    parts = ["python", "qiime2_auto.py", "-i", input_path, "-o", output_path]
+    if data.get("metadata"):
+        parts.extend(["--metadata", str(data["metadata"])])
     for key in ("barcodes", "primer_f", "primer_r", "primer_metadata", "classifier", "sampling_depth", "phred_offset", "min_quality", "min_frequency", "trim_left_f", "trim_left_r", "trunc_len_f", "trunc_len_r", "max_ee", "trunc_q", "qiime_env"):
         if data.get(key):
             parts.extend([f"--{key.replace('_', '-')}", str(data[key])])
@@ -151,6 +154,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._handle_upload()
                 return
             data = self._body()
+            if path == "/api/preflight":
+                self._send({"ok": True, "preflight": build_preflight(data)})
+                return
             if path == "/api/manifest":
                 input_path = Path(data["input_path"])
                 output_path = data.get("output_path") or str(input_path / "manifest.tsv")
@@ -345,7 +351,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send({"ok": True, "job_id": job_id}, HTTPStatus.ACCEPTED)
 
     def _start_job(self, data: dict) -> None:
-        required = ["input_path", "output_dir", "data_type", "metadata"]
+        required = ["input_path", "output_dir", "data_type"]
         missing = [key for key in required if not data.get(key)]
         if missing:
             raise ValueError(f"缺少参数: {', '.join(missing)}")
@@ -353,16 +359,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
             raise ValueError("一键分析只支持 Linux；请在安装了 Conda + QIIME2 的 Linux 服务器上打开页面。")
         if not data.get("qiime_env"):
             raise ValueError("请先选择一个包含 QIIME2 的 Conda 环境。")
+        environments = discover_environments(probe=True)
+        selected_environment = next(
+            (item for item in environments.get("environments", []) if item.get("name") == data["qiime_env"]),
+            None,
+        )
+        if not selected_environment or not selected_environment.get("qiime_available"):
+            raise ValueError("所选 Conda 环境当前没有可用的 QIIME2，请刷新环境列表后重新选择。")
+        data["qiime_env_available"] = True
         input_path = Path(str(data["input_path"])).expanduser()
-        metadata_path = Path(str(data["metadata"])).expanduser()
+        metadata_path = Path(str(data.get("metadata"))).expanduser() if data.get("metadata") else None
         if not input_path.exists():
             raise ValueError(f"输入文件或目录不存在: {input_path}")
-        if not metadata_path.is_file():
+        if metadata_path and not metadata_path.is_file():
             raise ValueError(f"metadata 文件不存在: {metadata_path}")
         if not data.get("skip_taxonomy"):
             classifier_path = Path(str(data.get("classifier", ""))).expanduser()
             if not classifier_path.is_file():
                 raise ValueError("物种分类已开启，但分类器文件不存在；请重新选择 .qza，或勾选跳过物种分类。")
+        plan = build_preflight({**data, "platform": os.name})
+        if not plan["can_run"]:
+            message = "；".join(item["message"] for item in plan["blockers"])
+            raise ValueError(f"启动前检查未通过：{message}")
+        data["skip_diversity"] = plan["effective"]["skip_diversity"]
+        data["skip_ancom"] = plan["effective"]["skip_ancom"]
+        if data["skip_diversity"]:
+            # A stale/invalid custom value must not prevent a run whose
+            # diversity branch has already been auto-skipped.
+            data["sampling_depth"] = "auto"
         job_id = uuid.uuid4().hex[:12]
         with JOBS_LOCK:
             JOBS[job_id] = {"id": job_id, "status": "running", "message": "任务已启动", "result": None}

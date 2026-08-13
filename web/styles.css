@@ -156,3 +156,30 @@ article[hidden], .modal-backdrop[hidden] { display: none !important; }
 .directory-entry strong { font-size: 12px; }
 .directory-empty { padding: 25px 10px; color: var(--muted-dark); font-size: 11px; text-align: center; }
 @media (max-width: 680px) { .editor-card { padding: 21px; }.editor-actions, .group-toolbar, .group-create { align-items: flex-start; flex-direction: column; }.group-toolbar { display: flex; }.group-create, .group-create .text-field, .group-create .subtle-button { width: 100%; }.catalog-card { align-items: flex-start; flex-direction: column; }.catalog-card .subtle-button { width: 100%; }.directory-modal { padding: 21px; }.directory-path-row { align-items: stretch; flex-direction: column; } }
+
+/* Dependency states make the workflow explain itself instead of leaving controls looking active. */
+.dependency-disabled { opacity: .48; filter: saturate(.55); }
+.dependency-disabled .file-row, .dependency-disabled .catalog-card, .dependency-disabled input, .dependency-disabled button { cursor: not-allowed; }
+.capability-note { display: flex; gap: 9px; align-items: flex-start; margin-top: 13px; padding: 10px 12px; border-left: 3px solid var(--teal-deep); background: #def5ed; font-size: 10px; line-height: 1.55; }
+.capability-note strong { display: block; flex: 0 0 auto; font-size: 11px; }
+.capability-note span { color: var(--muted-dark); }
+.capability-note.info { border-left-color: var(--teal-deep); background: #e5f4ef; }
+.capability-note.warn { border-left-color: var(--amber); background: #fff0d3; }
+.capability-note.good { border-left-color: var(--teal-deep); background: #def5ed; }
+.plan-notice { display: flex; gap: 12px; align-items: flex-start; margin-top: 22px; padding: 13px 15px; color: #805527; background: #fff0d3; border-left: 3px solid var(--amber); }
+.plan-notice-title { display: flex; gap: 7px; align-items: center; flex: 0 0 auto; font-size: 11px; }
+.plan-notice-title span { color: #a75d22; font: 15px var(--mono); }
+.plan-notice-copy { color: #8b622f; font-size: 10px; }
+.plan-notice[hidden], .preflight-plan[hidden] { display: none !important; }
+.preflight-plan { margin-top: 18px; padding: 13px; background: var(--paper-2); }
+.preflight-title { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 5px; color: var(--ink); font: 700 11px var(--body); }
+.preflight-title small { color: var(--muted-dark); font: 10px var(--mono); }
+.preflight-item { display: grid; grid-template-columns: 21px 1fr; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line-dark); }
+.preflight-item > span { display: grid; width: 20px; height: 20px; place-items: center; color: var(--ink); background: var(--amber); border-radius: 50%; font: 11px var(--mono); }
+.preflight-item.skipped > span { background: var(--teal); }
+.preflight-item strong, .preflight-item small { display: block; }
+.preflight-item strong { font-size: 11px; }
+.preflight-item small { margin-top: 2px; color: var(--muted-dark); font-size: 10px; }
+.readiness-item.info .check-dot { color: var(--ink); background: var(--teal); }
+.readiness-item.info small { color: #367d72; }
+.ready-badge.info { color: #287d70; background: #def5ed; border-color: rgba(32,125,109,.25); }

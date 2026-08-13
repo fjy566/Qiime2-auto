@@ -571,6 +571,7 @@ python qiime2_auto.py serve</code></pre>
 sample01   control     3
 sample02   treatment   8</code></pre>
         <p>第一列是样本 ID，其他列是 metadata；普通空单元格表示缺失值。详细规则请参考 <a href="https://docs.qiime2.org/2024.10/tutorials/metadata/" target="_blank" rel="noreferrer">QIIME2 官方 Metadata 说明</a>。</p>
+        <div class="note"><b>metadata 可以暂时不提供。</b>没有 metadata 时仍可做导入、DADA2 和基础物种分类；需要样本信息的多样性分析、采样深度和 ANCOM 会在启动前检查中自动跳过。如果文件没有至少两个完整的 categorical 分组值，只跳过 ANCOM，其他可用步骤仍会执行。</div>
       </article>
 
       <article id="environment">
@@ -633,6 +634,7 @@ python qiime2_auto.py --help</code></pre>
   --primer-r GGACTACHVGGGTWTCTAAT \
   --sampling-depth 10000</code></pre>
         <p>sampling-depth 也可以写 auto；如果当前环境没有 biom，请改用明确的正整数。需要检查参数但暂时不调用外部工具时，可以追加 --dry-run。</p>
+        <p><code>--metadata</code> 是可选的。省略它仍可执行导入、DADA2 和物种分类（需要分类器），但多样性、采样深度和 ANCOM 会按启动前检查自动跳过；补齐 metadata 后重新运行即可恢复。</p>
       </article>
 
       <article id="faq">
@@ -644,6 +646,8 @@ python qiime2_auto.py --help</code></pre>
         <p>程序会读取 manifest 的 filepath 列，而不是只看 manifest 文件名。请确认路径能在服务器上找到；如果文件来自浏览器，先选择 manifest，再选择对应 FASTQ，页面会自动合并。</p>
         <h3>可以只使用 Web 吗？</h3>
         <p>可以。Linux 服务器准备好 Conda / QIIME2 后，页面会完成环境选择、参数校验、后台任务和进度展示，你只需要点击一次“开始完整分析”。CLI 仍保留，方便批处理和排错。</p>
+        <h3>没有 metadata 可以运行吗？</h3>
+        <p>可以。页面会把缺少 metadata 造成的影响写在“本次分析计划”里：导入、DADA2 和基础物种分类仍可执行，多样性、采样深度和 ANCOM 会明确显示为自动跳过。</p>
         <h3>Windows 能不能直接完成 QIIME2 分析？</h3>
         <p>本项目的正式分析边界是 Linux + Conda + QIIME2。Windows 可以用于查看页面、准备输入、编辑表格和运行测试；请把真正分析放到符合条件的 Linux 服务器。</p>
       </article>
