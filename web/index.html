@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1114">
+  <title>QIIME2 Auto · 16S 分析工作台</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="grain"></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="QIIME2 Auto 首页"><span class="brand-mark">⟡</span><span>QIIME2 <em>AUTO</em></span></a>
+    <div class="top-meta"><span class="status-dot" id="healthDot"></span><span id="healthText">正在检查本机环境</span><span class="version">v1.0</span></div>
+  </header>
+
+  <main>
+    <section class="hero reveal">
+      <div class="hero-copy">
+        <p class="eyebrow">16S rRNA · LOCAL WORKBENCH</p>
+        <h1>把复杂的测序流程，<span>变成看得懂的步骤。</span></h1>
+        <p class="lede">扫描数据、生成模板、校验元数据，然后再决定是否启动 QIIME2。每一步都有反馈，不让你对着终端猜发生了什么。</p>
+        <div class="hero-actions"><a href="#workspace" class="button button-primary">开始检查数据 <span>↘</span></a><a href="README.html" class="text-link">阅读使用说明 ↗</a></div>
+      </div>
+      <div class="hero-orbit" aria-hidden="true"><div class="orbit-ring ring-a"></div><div class="orbit-ring ring-b"></div><div class="orbit-core"><span>16S</span><small>READY<br>TO MAP</small></div><i class="orbit-dot dot-a"></i><i class="orbit-dot dot-b"></i><i class="orbit-dot dot-c"></i></div>
+    </section>
+
+    <section class="workspace" id="workspace">
+      <div class="section-heading reveal"><div><p class="eyebrow">01 / WORKSPACE</p><h2>先把输入弄清楚</h2></div><p class="section-note">当前版本不要求你先安装 QIIME2。扫描、模板与校验都可以先做。</p></div>
+      <div class="workspace-grid">
+        <article class="panel input-panel reveal delay-1">
+          <div class="panel-kicker"><span class="number">01</span><span>INPUT PATH</span></div>
+          <label for="inputPath">输入文件或目录</label>
+          <div class="field-with-action"><input id="inputPath" type="text" placeholder="例如：D:\\project\\raw_data 或 /data/run1"><button class="icon-button" id="scanButton" title="扫描输入">↗</button></div>
+          <p class="hint">支持 EMP、Casava、manifest.tsv，以及带 R1/R2 标识的 FASTQ。</p>
+          <div class="scan-result empty" id="scanResult"><span class="scan-icon">⌁</span><span>输入路径后点击右侧箭头开始扫描</span></div>
+        </article>
+        <article class="panel steps-panel reveal delay-2">
+          <div class="panel-kicker"><span class="number">02</span><span>GUIDED STEPS</span></div>
+          <div class="step-list">
+            <div class="step active" data-step="scan"><span class="step-icon">⌕</span><div><strong>扫描并识别</strong><small>判断是单端、双端还是 manifest</small></div><span class="step-state">进行中</span></div>
+            <div class="step" data-step="manifest"><span class="step-icon">≋</span><div><strong>生成 manifest</strong><small>把 FASTQ 文件整理成标准清单</small></div><button class="mini-button" id="manifestButton" disabled>生成</button></div>
+            <div class="step" data-step="metadata"><span class="step-icon">⊞</span><div><strong>准备 metadata</strong><small>生成分组模板并检查空值/重复</small></div><button class="mini-button" id="metadataButton" disabled>生成</button></div>
+            <div class="step" data-step="run"><span class="step-icon">▶</span><div><strong>预览与执行</strong><small>QIIME2 可用后才会真正运行</small></div><button class="mini-button" id="previewButton" disabled>预览</button></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="insights">
+      <div class="section-heading reveal"><div><p class="eyebrow">02 / CONTROL ROOM</p><h2>让每个判断都有依据</h2></div><p class="section-note">控制台会把环境缺口和下一步动作说清楚。</p></div>
+      <div class="insight-grid">
+        <article class="insight-card accent-cyan reveal delay-1"><span class="insight-symbol">◌</span><div><p class="card-label">DATA TYPE</p><h3 id="dataTypeValue">等待扫描</h3><p id="dataTypeDesc">输入路径确认后，这里会显示识别结果。</p></div></article>
+        <article class="insight-card accent-amber reveal delay-2"><span class="insight-symbol">▦</span><div><p class="card-label">SAMPLES</p><h3 id="sampleCountValue">—</h3><p id="sampleCountDesc">扫描目录后统计 FASTQ 文件数量。</p></div></article>
+        <article class="insight-card accent-pink reveal delay-3"><span class="insight-symbol">⌁</span><div><p class="card-label">QIIME2 STATUS</p><h3 id="qiimeValue">检查中</h3><p id="qiimeDesc">没有 QIIME2 时仍可以完成前置准备。</p></div></article>
+      </div>
+    </section>
+
+    <section class="command-section reveal" id="commandSection">
+      <div class="section-heading"><div><p class="eyebrow">03 / COMMAND PREVIEW</p><h2>最后再按下运行</h2></div><p class="section-note">先看懂命令，再交给 QIIME2；不隐藏关键参数。</p></div>
+      <div class="command-card"><div class="command-head"><span>TERMINAL / PREVIEW</span><button id="copyButton" class="copy-button" disabled>复制命令</button></div><pre id="commandOutput"><code>扫描输入后，这里会出现可以复制到命令行的完整命令。</code></pre><div class="command-footer"><span id="commandHint">建议先完成 manifest 和 metadata 校验。</span><button class="button button-primary" id="runButton" disabled>启动分析 <span>→</span></button></div></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"><span class="toast-mark">!</span><span id="toastText"></span></div>
+  <footer><span>QIIME2 AUTO</span><span>本地优先 · 不上传数据 · CLI 仍然保留</span></footer>
+  <script src="/app.js"></script>
+</body>
+</html>

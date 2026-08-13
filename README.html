@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QIIME2 Auto · 使用说明</title>
+  <style>
+    :root{--ink:#0b1114;--paper:#f3f0e8;--paper2:#e6e1d5;--cyan:#9ce8e2;--amber:#f1b35b;--muted:#667375;--line:#c9c5ba}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--ink);color:var(--paper);font-family:"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.7}header,main,footer{width:min(1120px,calc(100% - 40px));margin:auto}header{padding:58px 0 46px;border-bottom:1px solid #ffffff20;display:flex;justify-content:space-between;gap:30px;align-items:end}header h1{font:700 clamp(38px,6vw,72px)/1 "Segoe UI","Microsoft YaHei";letter-spacing:-.06em;margin:12px 0;color:var(--paper)}header h1 span{color:var(--cyan)}.eyebrow{font:11px Consolas,monospace;letter-spacing:.15em;color:var(--cyan);margin:0}.intro{max-width:440px;color:#b9c0bd;margin:0}.layout{display:grid;grid-template-columns:220px 1fr;gap:54px;padding:54px 0 70px}.toc{position:sticky;top:20px;align-self:start}.toc a{color:#9ba7a6;text-decoration:none;display:block;padding:6px 0;font-size:13px}.toc a:hover{color:var(--cyan)}article{background:var(--paper);color:var(--ink);padding:30px 34px;margin-bottom:18px;box-shadow:0 18px 55px #0004}h2{font:700 29px "Segoe UI","Microsoft YaHei";letter-spacing:-.04em;margin:0 0 16px}h3{font-size:18px;margin:28px 0 8px;border-left:4px solid var(--cyan);padding-left:12px}p{margin:8px 0 16px}li{margin:6px 0}code,pre{font-family:Consolas,"Courier New",monospace}code{background:var(--paper2);padding:2px 5px}pre{background:var(--ink);color:var(--cyan);padding:18px;overflow:auto;position:relative;margin:14px 0}table{width:100%;border-collapse:collapse;margin:15px 0;font-size:13px}th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left}th{background:var(--ink);color:var(--paper);font-weight:500}.note{border-left:4px solid var(--amber);background:#fff2d9;padding:14px 18px;margin:20px 0}.button{border:1px solid #ffffff35;background:#ffffff12;color:var(--paper);padding:10px 14px;text-decoration:none;font-size:12px}.top-actions{display:flex;gap:10px;align-items:center}footer{border-top:1px solid #ffffff20;padding:24px 0 32px;color:#879391;font:11px Consolas,monospace;display:flex;justify-content:space-between}@media(max-width:760px){header{display:block}.top-actions{margin-top:20px}.layout{display:block}.toc{position:static;margin-bottom:30px;padding-bottom:18px;border-bottom:1px solid #ffffff20}.toc a{display:inline-block;margin-right:14px}.layout article{padding:24px 20px}footer{display:block}footer span{display:block;margin-top:8px}}
+  </style>
+</head>
+<body>
+  <header>
+    <div><p class="eyebrow">QIIME2 AUTO · LOCAL-FIRST 16S WORKBENCH</p><h1>先看懂，<span>再分析。</span></h1></div>
+    <div><p class="intro">这是一个保留命令行、同时提供本地 Web 控制台的 16S rRNA 分析助手。它不会安装 QIIME2，也不会把你的数据上传到外部服务。</p><div class="top-actions"><a class="button" href="README.md">打开 Markdown 版</a><a class="button" href="web/index.html">打开控制台</a></div></div>
+  </header>
+  <main class="layout">
+    <nav class="toc"><p class="eyebrow">INDEX</p><a href="#start">快速开始</a><a href="#cli">命令行</a><a href="#input">输入格式</a><a href="#output">输出结构</a><a href="#env">环境边界</a><a href="#faq">常见问题</a></nav>
+    <div>
+      <article id="start"><h2>快速开始</h2><p>准备阶段不要求 QIIME2。打开终端运行：</p><pre><code>python qiime2_auto.py --help
+python qiime2_auto.py scan /path/to/raw_data
+python qiime2_auto.py serve</code></pre><p>然后打开 <code>http://127.0.0.1:8765</code>。控制台会按“扫描 → manifest → metadata → 校验 → 命令预览”引导你。默认只监听本机。</p></article>
+      <article id="cli"><h2>命令行接口</h2><h3>生成 manifest</h3><pre><code>python qiime2_auto.py -i raw_data -o prepared --generate-manifest --paired-end</code></pre><p>单端数据将 <code>--paired-end</code> 换成 <code>--single-end</code>。</p><h3>生成 metadata</h3><pre><code>python qiime2_auto.py -i prepared/manifest.tsv -o prepared \
+  --generate-metadata --metadata-columns group timepoint</code></pre><p>请编辑生成的 TSV，把占位分组改成真实值。<code>sample-id</code> 或 QIIME2 常见的 <code>#SampleID</code> 都支持。</p><h3>执行分析</h3><pre><code>python qiime2_auto.py -i prepared/manifest.tsv -o results \
+  --metadata prepared/metadata.tsv \
+  --classifier /path/to/classifier.qza \
+  --sampling-depth 10000 \
+  --primer-f GTGCCAGCMGCCGCGGTAA \
+  --primer-r GGACTACHVGGGTWTCTAAT</code></pre><div class="note">真正执行分析时必须在你自己的 QIIME2 环境中运行。使用 <code>--dry-run</code> 可以只打印命令，不调用外部工具。</div></article>
+      <article id="input"><h2>支持的输入格式</h2><table><thead><tr><th>类型</th><th>识别方式</th><th>说明</th></tr></thead><tbody><tr><td>EMP single</td><td>barcodes.fastq.gz + sequences.fastq.gz</td><td>单端 EMP</td></tr><tr><td>EMP paired</td><td>barcodes + forward + reverse</td><td>双端 EMP</td></tr><tr><td>Casava</td><td>SampleA_S1_L001_R1_001.fastq.gz</td><td>双端需同时存在 R1/R2</td></tr><tr><td>manifest</td><td>TSV 含 sample-id 与 filepath 列</td><td>推荐使用绝对路径</td></tr><tr><td>混样 FASTQ</td><td>文件名含 _R1 或普通 FASTQ</td><td>必须传 --barcodes</td></tr></tbody></table><h3>metadata 最小示例</h3><pre><code>sample-id    group
+sample01     control
+sample02     treatment</code></pre><p>实际 TSV 中不要保留示例前的 <code>+</code> 符号；这里仅用于避免 HTML 排版误读。</p></article>
+      <article id="output"><h2>输出结构</h2><pre><code>results/
+├─ 00_raw_data/
+├─ 01_demultiplexed/
+├─ 02_quality_control/
+├─ 03_denoised/
+├─ 04_taxonomy/
+├─ 05_diversity/
+├─ 06_phylogeny/
+├─ 07_visualization/
+├─ 08_rarefaction_curves/
+├─ 09_differential_abundance/
+├─ logs/
+└─ analysis_report.md</code></pre><p>报告只列出实际生成的结果，日志目录会记录外部命令。<code>.qzv</code> 文件可以上传到 <a href="https://view.qiime2.org" target="_blank" rel="noreferrer">QIIME2 View</a> 查看。</p></article>
+      <article id="env"><h2>环境边界</h2><p>Python 3.9+ 足以运行帮助、扫描、manifest、metadata 和 Web 控制台。程序不会在导入模块时强制加载 biom/pandas，也不会在准备阶段检查 QIIME2。</p><p>完整分析需要你自行准备 QIIME2、对应版本的插件、分类器 <code>.qza</code>，以及可选的 Figaro/biom。若缺少 <code>qiime</code>，程序会明确报错，不会伪造成功结果。</p></article>
+      <article id="faq"><h2>常见问题</h2><h3>metadata 校验失败怎么办？</h3><p>检查第一列是否为 <code>sample-id</code>/<code>#SampleID</code>，ID 是否重复，是否有空值，以及是否至少存在一个分组列。</p><h3>为什么 auto 采样深度没有结果？</h3><p>自动计算需要 QIIME2 导出的 feature table 和 biom。没有 biom 时，显式传入例如 <code>--sampling-depth 10000</code>。</p><h3>能否只使用 Web？</h3><p>Web 控制台可以发起任务并提供状态接口，但页面默认把完整命令展示出来，便于你在 QIIME2 环境中复现和排错。CLI 始终保留。</p></article>
+    </div>
+  </main>
+  <footer><span>QIIME2 AUTO · v1.0.0</span><span>本地优先 · 可复现 · 透明执行</span></footer>
+</body>
+</html>
