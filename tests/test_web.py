@@ -35,6 +35,11 @@ class WebSmokeTests(unittest.TestCase):
         self.assertTrue(self.get_json("/api/health")["ok"])
         with urlopen(self.base + "/") as response:
             self.assertIn("QIIME2 Auto", response.read().decode("utf-8"))
+        with urlopen(self.base + "/README.html") as response:
+            self.assertEqual(response.status, 200)
+            self.assertIn("使用说明", response.read().decode("utf-8"))
+        with urlopen(self.base + "/guide.html") as response:
+            self.assertEqual(response.status, 200)
 
     def test_scan_and_metadata_validation_endpoint(self):
         with tempfile.TemporaryDirectory() as directory:

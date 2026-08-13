@@ -144,15 +144,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send({"ok": True, "job_id": job_id}, HTTPStatus.ACCEPTED)
 
     def _serve_static(self, request_path: str) -> None:
-        relative = unquote(request_path.lstrip("/")) or "index.html"
-        candidate = (WEB_ROOT / relative).resolve()
+        # README 位于项目根目录，不属于普通静态资源目录；只为这两个明确文件
+        # 提供映射，避免放开任意父目录访问造成路径穿越风险。
+        if request_path in {"/README.html", "/guide.html"}:
+            candidate = (WEB_ROOT.parent / "README.html").resolve()
+            content_type = "text/html; charset=utf-8"
+        elif request_path == "/README.md":
+            candidate = (WEB_ROOT.parent / "README.md").resolve()
+            content_type = "text/markdown; charset=utf-8"
+        else:
+            relative = unquote(request_path.lstrip("/")) or "index.html"
+            candidate = (WEB_ROOT / relative).resolve()
+            content_type = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "application/javascript; charset=utf-8"}.get(candidate.suffix, "application/octet-stream")
         if WEB_ROOT.resolve() not in candidate.parents and candidate != WEB_ROOT.resolve():
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
+            if candidate not in {(WEB_ROOT.parent / "README.html").resolve(), (WEB_ROOT.parent / "README.md").resolve()}:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
         if not candidate.is_file():
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        content_type = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "application/javascript; charset=utf-8"}.get(candidate.suffix, "application/octet-stream")
         body = candidate.read_bytes()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
