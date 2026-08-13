@@ -13,3 +13,5 @@ results/
 *.fq.gz
 temp_export/
 .qiime2auto_uploads/
+classifiers/*.qza
+classifiers/.*.part

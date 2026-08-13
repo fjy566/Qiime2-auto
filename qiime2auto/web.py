@@ -3,22 +3,25 @@
 from __future__ import annotations
 
 import json
-import cgi
 import os
 import shutil
 import subprocess
 import threading
 import uuid
+from email import policy
+from email.parser import BytesParser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from .classifiers import CLASSIFIER_ROOT, classifier_catalog, download_classifier
 from .config import AnalysisConfig
-from .environment import discover_environments, install_command, install_options
+from .environment import discover_environments, figaro_install_command, install_command, install_options
 from .io import generate_manifest, generate_metadata_template, inspect_manifest, is_fastq, read_sample_ids, reconcile_manifest, scan_input, validate_metadata_details
 from .pipeline import PipelineOptions, run_analysis
 from .runner import command_text
+from .table_editor import metadata_preview, preview_manifest, save_manifest_table, save_metadata_table
 
 
 WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
@@ -26,6 +29,8 @@ JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
 INSTALL_JOBS: dict[str, dict] = {}
 INSTALL_LOCK = threading.Lock()
+DOWNLOAD_JOBS: dict[str, dict] = {}
+DOWNLOAD_LOCK = threading.Lock()
 UPLOAD_ROOT = WEB_ROOT.parent / ".qiime2auto_uploads"
 
 
@@ -44,6 +49,26 @@ def _preview_command(data: dict) -> str:
         if data.get(key):
             parts.append(f"--{key.replace('_', '-')}")
     return command_text(parts)
+
+
+def _list_directories(path_value: str | None) -> dict:
+    requested = Path(path_value).expanduser() if path_value else Path.cwd()
+    if requested.exists() and not requested.is_dir():
+        requested = requested.parent
+    if not requested.exists():
+        requested = requested.parent
+    current = requested.resolve()
+    if not current.is_dir():
+        current = Path.cwd().resolve()
+    directories = []
+    for child in sorted(current.iterdir(), key=lambda item: item.name.lower()):
+        try:
+            if child.is_dir() and not child.name.startswith("."):
+                directories.append({"name": child.name, "path": str(child.resolve())})
+        except OSError:
+            continue
+    parent = current.parent if current.parent != current else None
+    return {"current": str(current), "parent": str(parent) if parent else None, "directories": directories}
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -76,6 +101,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/install-options":
             self._send({"ok": True, **install_options()})
             return
+        if parsed.path == "/api/classifiers":
+            catalog = classifier_catalog()
+            downloaded = next((item for item in catalog if item["downloaded"] and item["recommended"]), None) or next((item for item in catalog if item["downloaded"]), None)
+            self._send({"ok": True, "root": str(CLASSIFIER_ROOT.resolve()), "catalog": catalog, "default": downloaded["path"] if downloaded else None})
+            return
+        if parsed.path == "/api/directories":
+            values = parse_qs(parsed.query)
+            self._send({"ok": True, **_list_directories(values.get("path", [""])[0])})
+            return
         if parsed.path == "/api/scan":
             values = parse_qs(parsed.query)
             path = values.get("path", [""])[0]
@@ -96,6 +130,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 job = INSTALL_JOBS.get(job_id)
             if not job:
                 self._send({"ok": False, "error": "找不到安装任务"}, HTTPStatus.NOT_FOUND)
+            else:
+                self._send({"ok": True, "job": job})
+            return
+        if parsed.path.startswith("/api/download-jobs/"):
+            job_id = parsed.path.rsplit("/", 1)[-1]
+            with DOWNLOAD_LOCK:
+                job = DOWNLOAD_JOBS.get(job_id)
+            if not job:
+                self._send({"ok": False, "error": "找不到下载任务"}, HTTPStatus.NOT_FOUND)
             else:
                 self._send({"ok": True, "job": job})
             return
@@ -122,6 +165,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 result = generate_metadata_template(read_sample_ids(source), output_path, data.get("columns") or ["group"])
                 self._send({"ok": True, "path": result, "sample_count": len(read_sample_ids(source))})
                 return
+            if path == "/api/metadata-preview":
+                self._send({"ok": True, "preview": metadata_preview(data["path"])})
+                return
+            if path == "/api/metadata-save":
+                saved = save_metadata_table(data["path"], data.get("headers") or [], data.get("types") or [], data.get("rows") or [])
+                self._send({"ok": True, "path": saved["path"], "preview": metadata_preview(saved["path"]), "validation": {key: value for key, value in saved.items() if key in {"valid", "sample_count", "columns", "types", "errors", "warnings"}}})
+                return
+            if path == "/api/manifest-preview":
+                self._send({"ok": True, "preview": preview_manifest(data["path"], data.get("bundle_dir"))})
+                return
+            if path == "/api/manifest-save":
+                saved = save_manifest_table(data["path"], data["data_type"], data.get("rows") or [])
+                bundle_dir = data.get("bundle_dir") or str(Path(saved["path"]).parent)
+                preview = preview_manifest(saved["path"], bundle_dir)
+                self._send({"ok": True, "path": saved["path"], "preview": preview, "scan": scan_input(saved["path"], bundle_dir)})
+                return
             if path == "/api/validate-metadata":
                 result = validate_metadata_details(data["path"])
                 self._send({"ok": result.valid, "validation": result.to_dict()}, HTTPStatus.OK if result.valid else HTTPStatus.UNPROCESSABLE_ENTITY)
@@ -136,6 +195,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if path == "/api/install":
                 self._start_install(data)
                 return
+            if path == "/api/figaro/install":
+                self._start_figaro_install(data)
+                return
+            if path == "/api/classifiers/download":
+                self._start_classifier_download(data)
+                return
             if path == "/api/run":
                 self._start_job(data)
                 return
@@ -149,31 +214,40 @@ class DashboardHandler(BaseHTTPRequestHandler):
         content_type = self.headers.get("Content-Type", "")
         if not content_type.startswith("multipart/form-data"):
             raise ValueError("文件上传必须使用 multipart/form-data")
-        form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": content_type})
-        items = form["files"] if "files" in form else []
-        if not isinstance(items, list):
-            items = [items]
-        items = [item for item in items if getattr(item, "filename", None)]
+        length = int(self.headers.get("Content-Length", "0"))
+        raw_body = self.rfile.read(length) if length else b""
+        message = BytesParser(policy=policy.default).parsebytes(
+            f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8") + raw_body
+        )
+        fields: dict[str, str] = {}
+        items: list[tuple[str, bytes]] = []
+        for part in message.iter_parts() if message.is_multipart() else []:
+            name = part.get_param("name", header="content-disposition")
+            filename = part.get_filename()
+            if filename:
+                items.append((filename, part.get_payload(decode=True) or b""))
+            elif name:
+                payload = part.get_payload(decode=True) or b""
+                fields[name] = payload.decode("utf-8", errors="replace")
         if not items:
             raise ValueError("没有选择文件")
-        session_id = form.getfirst("session_id", "").strip()
+        session_id = fields.get("session_id", "").strip()
         if session_id and (len(session_id) != 32 or any(character not in "0123456789abcdef" for character in session_id.lower())):
             raise ValueError("上传会话无效，请重新选择文件")
         session_id = session_id or uuid.uuid4().hex
         session_dir = UPLOAD_ROOT / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         saved = []
-        for item in items:
-            filename = Path(item.filename).name
+        for original_name, content in items:
+            filename = Path(original_name).name
             if not filename:
                 continue
             destination = session_dir / filename
-            with destination.open("wb") as output:
-                shutil.copyfileobj(item.file, output)
+            destination.write_bytes(content)
             saved.append(str(destination.resolve()))
         if not saved:
             raise ValueError("没有可保存的文件")
-        selected_kind = form.getfirst("kind", "data")
+        selected_kind = fields.get("kind", "data")
         manifest_candidates = []
         for candidate in sorted(session_dir.iterdir()):
             if candidate.is_file() and not is_fastq(candidate):
@@ -217,6 +291,57 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     INSTALL_JOBS[job_id].update({"status": "failed", "output": str(exc)})
 
         threading.Thread(target=worker, name=f"qiime2auto-install-{job_id}", daemon=True).start()
+        self._send({"ok": True, "job_id": job_id}, HTTPStatus.ACCEPTED)
+
+    def _start_figaro_install(self, data: dict) -> None:
+        if os.name != "posix":
+            raise ValueError("Figaro 一键安装只支持 Linux；请在 Linux + Conda 服务器上打开本页面")
+        details = discover_environments(probe=False)
+        if not details.get("conda_available"):
+            raise ValueError(details.get("error") or "没有找到 conda")
+        command = figaro_install_command(str(data.get("environment_name", "")).strip())
+        job_id = uuid.uuid4().hex[:12]
+        with INSTALL_LOCK:
+            INSTALL_JOBS[job_id] = {"id": job_id, "kind": "figaro", "status": "running", "command": command, "output": "正在向选定的 Conda 环境安装 Figaro…"}
+
+        def worker() -> None:
+            try:
+                process = subprocess.run(command, check=False, capture_output=True, text=True)
+                output = "\n".join(value for value in (process.stdout, process.stderr) if value).strip()
+                with INSTALL_LOCK:
+                    INSTALL_JOBS[job_id].update({"status": "completed" if process.returncode == 0 else "failed", "returncode": process.returncode, "output": output[-5000:]})
+            except Exception as exc:
+                with INSTALL_LOCK:
+                    INSTALL_JOBS[job_id].update({"status": "failed", "output": str(exc)})
+
+        threading.Thread(target=worker, name=f"qiime2auto-figaro-{job_id}", daemon=True).start()
+        self._send({"ok": True, "job_id": job_id}, HTTPStatus.ACCEPTED)
+
+    def _start_classifier_download(self, data: dict) -> None:
+        classifier_id = str(data.get("id", "")).strip()
+        # Validate before creating a job, so a typo returns a useful response immediately.
+        catalog = {item["id"] for item in classifier_catalog()}
+        if classifier_id not in catalog:
+            raise ValueError("未知的官方分类器")
+        job_id = uuid.uuid4().hex[:12]
+        with DOWNLOAD_LOCK:
+            DOWNLOAD_JOBS[job_id] = {"id": job_id, "classifier_id": classifier_id, "status": "running", "downloaded": 0, "total": 0, "percent": 0, "path": None, "error": None}
+
+        def progress(downloaded: int, total: int) -> None:
+            with DOWNLOAD_LOCK:
+                job = DOWNLOAD_JOBS[job_id]
+                job.update({"downloaded": downloaded, "total": total, "percent": round(downloaded * 100 / total, 1) if total else 0})
+
+        def worker() -> None:
+            try:
+                target = download_classifier(classifier_id, CLASSIFIER_ROOT, progress)
+                with DOWNLOAD_LOCK:
+                    DOWNLOAD_JOBS[job_id].update({"status": "completed", "path": target, "percent": 100})
+            except Exception as exc:
+                with DOWNLOAD_LOCK:
+                    DOWNLOAD_JOBS[job_id].update({"status": "failed", "error": str(exc)})
+
+        threading.Thread(target=worker, name=f"qiime2auto-classifier-{job_id}", daemon=True).start()
         self._send({"ok": True, "job_id": job_id}, HTTPStatus.ACCEPTED)
 
     def _start_job(self, data: dict) -> None:

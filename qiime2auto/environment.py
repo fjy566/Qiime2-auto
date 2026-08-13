@@ -25,6 +25,9 @@ class CondaEnvironment:
     qiime_available: bool = False
     qiime_version: str | None = None
     probe_error: str | None = None
+    figaro_available: bool = False
+    figaro_version: str | None = None
+    figaro_probe_error: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -66,6 +69,17 @@ def _probe_environment(conda: str, environment: CondaEnvironment) -> CondaEnviro
         environment.qiime_version = match.group(1) if match else combined.splitlines()[0] if combined else "可用"
     else:
         environment.probe_error = combined[-300:] or f"退出码 {result.returncode}"
+    try:
+        figaro_result = _run([conda, "run", "--no-capture-output", *selector, "figaro", "--version"], timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        environment.figaro_probe_error = str(exc)
+        return environment
+    figaro_output = "\n".join(value for value in (figaro_result.stdout, figaro_result.stderr) if value).strip()
+    if figaro_result.returncode == 0:
+        environment.figaro_available = True
+        environment.figaro_version = figaro_output.splitlines()[0] if figaro_output else "可用"
+    else:
+        environment.figaro_probe_error = figaro_output[-300:] or f"退出码 {figaro_result.returncode}"
     return environment
 
 
@@ -105,6 +119,14 @@ def install_command(version: str, distribution: str = "amplicon", environment_na
     # 文件命名规则，用户仍可在执行前复制并检查命令。
     url = f"https://data.qiime2.org/distro/{distribution}/qiime2-{distribution}-{version}-py310-linux-conda.yml"
     return ["conda", "env", "create", "-n", name, "--file", url]
+
+
+def figaro_install_command(environment_name: str) -> list[str]:
+    """Return the safe, non-shell command used by the one-click Figaro installer."""
+
+    if not environment_name or not _SAFE_NAME.fullmatch(environment_name):
+        raise ValueError("请选择有效的 Conda 环境后再安装 Figaro")
+    return ["conda", "install", "-n", environment_name, "-c", "bioconda", "figaro", "-y"]
 
 
 def install_options() -> dict:

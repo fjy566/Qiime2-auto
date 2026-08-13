@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from qiime2auto.environment import _parse_conda_env_list, discover_environments, install_command
+from qiime2auto.environment import _parse_conda_env_list, discover_environments, figaro_install_command, install_command
 
 
 class EnvironmentTests(unittest.TestCase):
@@ -17,6 +17,11 @@ class EnvironmentTests(unittest.TestCase):
         self.assertIn("py310-linux-conda.yml", command[-1])
         with self.assertRaises(ValueError):
             install_command("2024.10", "amplicon", "bad name;rm")
+
+    def test_figaro_install_command_targets_selected_environment(self):
+        self.assertEqual(figaro_install_command("qiime2-2024.10"), ["conda", "install", "-n", "qiime2-2024.10", "-c", "bioconda", "figaro", "-y"])
+        with self.assertRaises(ValueError):
+            figaro_install_command("bad name;rm")
 
     @patch("qiime2auto.environment.shutil.which", return_value=None)
     def test_discover_without_conda_is_actionable(self, _which):

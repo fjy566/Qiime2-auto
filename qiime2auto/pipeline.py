@@ -195,7 +195,8 @@ class PipelineService:
         return str(output)
 
     def _run_figaro(self, demux_file: str) -> dict | None:
-        if not shutil.which("figaro") and not self.options.dry_run:
+        figaro_available = self.runner.probe(["figaro", "--version"]) if self.options.qiime_env else shutil.which("figaro") is not None
+        if not figaro_available and not self.options.dry_run:
             print("⚠️ 未找到 Figaro，继续使用 DADA2 默认截断长度。")
             return None
         figaro_dir = self.output_dir / "02_quality_control" / "figaro"

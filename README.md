@@ -9,11 +9,16 @@
 - 自动识别 EMP、Casava、manifest 和混样 FASTQ 输入。
 - 从 FASTQ 文件名生成 QIIME2 manifest，修复单端/双端常见命名问题。
 - Web picker 支持一次选择多个 FASTQ，也支持选择任意后缀的 manifest、分类器 `.qza` 和 metadata 文件。
-- 根据 manifest 生成 metadata 模板，并校验 `sample-id`、`#SampleID`、重复 ID、空值和分组列。
+- 根据 manifest 生成 metadata 模板，并在页面里按样本分组；支持新建/删除组、添加 categorical/numeric 列、预览、编辑和保存。
+- metadata 遵循 QIIME2 TSV 规则：第一列是样本 ID，可选 `#q2:types` 声明类型；空单元格按缺失值处理，不会被误判成格式错误。
+- manifest 支持预览、逐行编辑、添加/删除样本和保存；任意后缀都按表头内容识别，双端会统计实际引用的 R1 + R2 文件数。
+- 提供 QIIME2 官方分类器目录：SILVA 138 99% 全长 16S 默认推荐，可一键下载到项目 `classifiers/` 文件夹；也保留本地 `.qza` picker。
 - 保留原来的命令行接口，并增加 `scan`、`serve`、`envs` 和 `install` 入口作为备用和排错工具。
 - 使用统一的命令执行器记录日志、报告缺失工具和分析失败原因。
 - 在 Linux/Conda 服务器上执行 `conda env list`，探测每个环境里的 `qiime --version`，并让用户选择实际运行环境。
 - 没有 QIIME2 时提供版本/分发版选择和一键安装任务状态；页面不会要求用户复制命令。
+- 选中的 QIIME2 Conda 环境会同时检测 Figaro；缺少 Figaro 时，Linux 页面提供安装到当前环境的一键按钮。
+- 输出目录通过服务器目录 picker 选择；分析会自动创建结果结构，不要求用户手动创建子目录。
 - 在本地 Web 控制台中完成“扫描 → metadata → 环境 → 一键分析”。文件只会暂存在当前服务所在机器，不会上传到外部服务。
 - 在 QIIME2 可用时执行导入、引物去除、质量过滤、Figaro、DADA2、物种分类、多样性、系统发育和 ANCOM 流程。
 
@@ -35,11 +40,11 @@ python -m qiime2auto serve
 
 控制台里可以：
 
-1. 输入 FASTQ 目录或 manifest 路径。
-2. 查看数据类型、FASTQ 数量和双端判断。
-3. 生成 `manifest.tsv`。
-4. 生成 `metadata.tsv` 模板。
-5. 校验 metadata，点击一次“开始完整分析”。
+1. 选择 manifest 或一次选择多个 FASTQ；查看数据类型、FASTQ 数量和双端判断。
+2. 需要时在 manifest 编辑器里预览、改路径、添加/删除样本并保存。
+3. 生成 metadata 后，在表格中为每个样本选择分组，也可以添加时间点、地点、处理方式等列。
+4. 选择 QIIME2 Conda 环境、项目内分类器和服务器输出目录；需要时一键安装 QIIME2/Figaro。
+5. 通过启动前检查后，点击一次“开始完整分析”。
 
 ### 文件 picker 与服务器路径
 
@@ -47,13 +52,38 @@ python -m qiime2auto serve
 
 manifest picker 不根据扩展名判断文件，`.manifest`、`.table`、`.data` 等任意后缀都可以选择；程序读取 `sample-id`、`absolute-filepath` 或 paired-end filepath 列。manifest 页面显示的是它引用的 FASTQ 数量，因此双端两行样本会正确显示 4 个 FASTQ 引用，而不是显示 0。生成 manifest 的按钮仍然保留。
 
-分类器和 metadata 也都有 picker。分类器选择后会写入本地暂存目录，metadata 选择后会立即执行格式校验。
+分类器和 metadata 也都有 picker。分类器选择后会写入本地暂存目录，metadata 选择后会立即执行格式校验。Web picker 选中的文件只会暂存在当前服务所在机器。
+
+### metadata 与 manifest 编辑器
+
+生成或选择 manifest 后，页面会显示可编辑表格。manifest 的 `sample-id`、`absolute-filepath`、`forward-absolute-filepath` 和 `reverse-absolute-filepath` 都可以修改；保存时会检查重复样本、空路径，并重新计算哪些 FASTQ 已找到。
+
+metadata 编辑器把样本 ID 固定为第一列。默认会有一个 `group` 分类列：点击“新建组”添加 `control`、`treatment` 等组，再在每一行的下拉框中选择。删除组会清空使用该组的样本值，但不会删除样本。其他列可以选择 `categorical` 或 `numeric` 类型；例如 `timepoint` 可作为分类列，`age` 可作为数值列。
+
+编辑器保存的文件包含类似下面的 QIIME2 类型声明：
+
+```text
+sample-id  group       age
+#q2:types  categorical numeric
+sample01   control     3
+sample02   treatment   8
+```
+
+参考：[QIIME2 Metadata 说明](https://docs.qiime2.org/2024.10/tutorials/metadata/)。
 
 ### Conda/QIIME2 环境
 
 点击“重新检查”会执行 `conda env list`，再用 `conda run -n <环境> qiime --version` 验证每个环境。只有真正包含 QIIME2 的环境可以用于启动分析；页面会自动使用所选环境，不需要手动激活环境。
 
 如果没有可用环境，安装助手会显示 QIIME2 版本和 `amplicon/tiny` 分发版选择。点击“一键安装 QIIME2”会创建新的 Conda 环境，不会覆盖现有环境；Windows 开发机只显示引导，实际安装请在 Linux 服务器执行。安装预设参考 [QIIME2 官方安装文档](https://amplicon-docs.qiime2.org/en/stable/how-to-guides/install/)。
+
+选中环境后，页面还会检查 `figaro --version`。如果没有 Figaro，点击“一键安装 Figaro”即可执行受控的 `conda install`；如果暂时不需要自动截断建议，也可以勾选“跳过 Figaro”。
+
+### 分类器与输出目录
+
+“分类器”卡片会列出官方资源。默认推荐下载 [SILVA 138 99% 全长分类器](https://data.qiime2.org/classifiers/sklearn-1.4.2/silva/silva-138-99-nb-classifier.qza)，下载后保存到项目的 `classifiers/` 文件夹并自动选中。另有官方 Greengenes 515F/806R 区域分类器可选；如果你的实验区域不同，应选择匹配区域的分类器或训练自己的分类器。分类器文件不会提交到 Git。
+
+输出目录旁的“选择目录”打开的是服务器 picker：进入文件夹后点击“使用当前目录”，程序会将路径写入输出设置，并在运行时自动创建 `00_raw_data/`、`logs/` 等子目录。
 
 ### 采样深度怎么选
 
@@ -86,7 +116,7 @@ python qiime2_auto.py \
   --metadata-columns group timepoint
 ```
 
-生成后请打开 `prepared/metadata.tsv`，把示例值改成真实分组。至少应有：
+生成后请在 Web 表格里为每个样本选择真实分组，或打开 `prepared/metadata.tsv` 手动编辑。至少应有：
 
 ```text
 sample-id    group
@@ -189,7 +219,7 @@ Python 3.9+ 即可运行核心功能。当前环境是否安装 pandas、numpy�
 
 **为什么 metadata 校验不通过？**
 
-优先检查：第一列是不是 `sample-id`/`#SampleID`，样本 ID 是否重复，是否有空值，以及是否至少存在一个分组列。
+优先检查：第一列是不是 `sample-id`/`#SampleID`，样本 ID 是否重复，数值列里是否混入文字。普通 metadata 单元格为空是合法的缺失值；但 `sample-id` 不能为空，重复 ID 仍然会阻止分析。
 
 **为什么 `sampling-depth auto` 没有结果？**
 
@@ -203,10 +233,12 @@ Python 3.9+ 即可运行核心功能。当前环境是否安装 pandas、numpy�
 
 - `qiime2_auto.py`：兼容 CLI 入口。
 - `qiime2auto/io.py`：输入识别、manifest 路径校正、metadata、报告。
+- `qiime2auto/table_editor.py`：QIIME2 metadata/manifest 的 TSV 预览、编辑、类型声明和保存。
+- `qiime2auto/classifiers.py`：受信任的官方分类器目录、项目文件夹下载和默认选择。
 - `qiime2auto/config.py`：配置模型与参数校验。
 - `qiime2auto/runner.py`：外部命令、日志和缺失工具检查。
 - `qiime2auto/pipeline.py`：QIIME2 分析流程编排。
-- `qiime2auto/environment.py`：Conda 环境发现、QIIME2 探测和安装参数。
+- `qiime2auto/environment.py`：Conda 环境发现、QIIME2/Figaro 探测和安装参数。
 - `qiime2auto/web.py`：本地 HTTP API、上传数据包和一键任务服务。
 - `web/`：本地控制台前端。
 - `tests/`：无 QIIME2 环境也能运行的回归测试。
@@ -215,7 +247,9 @@ Python 3.9+ 即可运行核心功能。当前环境是否安装 pandas、numpy�
 
 ```bash
 python -m unittest discover -s tests -v
+python -m pytest -q
 python -m py_compile qiime2_auto.py qiime2auto/config.py qiime2auto/io.py qiime2auto/runner.py qiime2auto/pipeline.py qiime2auto/web.py
+node --check web/app.js
 python qiime2_auto.py --help
 ```
 

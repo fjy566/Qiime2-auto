@@ -55,6 +55,9 @@ class WebSmokeTests(unittest.TestCase):
             page = response.read().decode("utf-8")
             self.assertIn("QIIME2 Auto", page)
             self.assertIn("一键完成分析", page)
+            self.assertIn("metadataEditorCard", page)
+            self.assertIn("manifestEditorCard", page)
+            self.assertIn("classifierCatalog", page)
             self.assertNotIn("commandOutput", page)
             self.assertNotIn("copyButton", page)
         with urlopen(self.base + "/README.html") as response:
@@ -111,6 +114,33 @@ class WebSmokeTests(unittest.TestCase):
         result = self.post_multipart("/api/upload", "metadata", [("metadata.txt", b"sample-id\tgroup\nS1\tcontrol\n")])
         self.assertEqual(result["kind"], "metadata")
         self.assertTrue(result["path"].endswith("metadata.txt"))
+
+    def test_table_editors_and_directory_picker_endpoints(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            metadata = root / "metadata.tsv"
+            metadata.write_text("sample-id\tgroup\tage\nS1\tcontrol\t3\nS2\t\t\n", encoding="utf-8")
+            preview = self.post_json("/api/metadata-preview", {"path": str(metadata)})
+            self.assertEqual(preview["preview"]["types"], ["", "", ""])
+            saved = self.post_json("/api/metadata-save", {"path": str(metadata), "headers": ["sample-id", "group", "age"], "types": ["", "categorical", "numeric"], "rows": [{"sample-id": "S1", "group": "control", "age": "3"}, {"sample-id": "S2", "group": "", "age": ""}]})
+            self.assertTrue(saved["ok"])
+            self.assertIn("#q2:types", metadata.read_text(encoding="utf-8"))
+            manifest = root / "manifest.weird"
+            (root / "S1_R1.fastq.gz").touch()
+            (root / "S1_R2.fastq.gz").touch()
+            manifest.write_text("sample-id\tforward-absolute-filepath\treverse-absolute-filepath\nS1\tS1_R1.fastq.gz\tS1_R2.fastq.gz\n", encoding="utf-8")
+            manifest_preview = self.post_json("/api/manifest-preview", {"path": str(manifest), "bundle_dir": str(root)})
+            self.assertEqual(manifest_preview["preview"]["fastq_count"], 2)
+            manifest_saved = self.post_json("/api/manifest-save", {"path": str(manifest), "data_type": "manifest_paired", "rows": manifest_preview["preview"]["rows"]})
+            self.assertEqual(manifest_saved["scan"]["existing_fastq_count"], 2)
+            directories = self.get_json(f"/api/directories?path={root}")
+            self.assertEqual(directories["current"], str(root.resolve()))
+
+    def test_classifier_catalog_is_allowlisted_and_project_scoped(self):
+        catalog = self.get_json("/api/classifiers")
+        self.assertTrue(catalog["catalog"])
+        self.assertTrue(any(item["id"] == "silva-138-99-full-length" for item in catalog["catalog"]))
+        self.assertTrue(catalog["root"].endswith("classifiers"))
 
 
 if __name__ == "__main__":

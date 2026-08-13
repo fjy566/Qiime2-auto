@@ -10,6 +10,12 @@ const state = {
   environmentReady: false,
   condaAvailable: false,
   platform: '',
+  environments: [],
+  selectedEnvironment: null,
+  metadataEditor: null,
+  manifestEditor: null,
+  classifierCatalog: [],
+  directory: null,
   busy: false,
   jobId: '',
 };
@@ -147,6 +153,7 @@ function showScan(scan, notify = true) {
   $('metadataButton').disabled = !isManifest;
   markStep('data', scan.data_type ? 'done' : 'active', scan.data_type ? '已识别' : '进行中');
   markStep('metadata', isManifest ? 'active' : 'blocked', isManifest ? '待准备' : '先完成 manifest');
+  if (isManifest) window.setTimeout(() => loadManifestPreview(state.inputPath), 0);
   if (notify) {
     if (scan.warnings?.length) toast(scan.warnings[0]);
     else if (scan.data_type) toast('数据已识别，可以继续准备 metadata。', true);
@@ -166,7 +173,7 @@ async function scan() {
 async function uploadFiles(input, kind) {
   if (!input.files?.length) return;
   const files = [...input.files];
-  files.forEach((file) => { if (!state.selectedNames.includes(file.name)) state.selectedNames.push(file.name); });
+  if (kind === 'fastq' || kind === 'manifest') files.forEach((file) => { if (!state.selectedNames.includes(file.name)) state.selectedNames.push(file.name); });
   renderSelectedFiles();
   const body = new FormData();
   body.append('kind', kind);
@@ -188,6 +195,7 @@ async function uploadFiles(input, kind) {
       state.metadata = result.path;
       $('metadataPath').value = result.path;
       $('metadataName').textContent = '已选择并暂存到服务器';
+      await loadMetadataPreview(result.path);
       await validateMetadata(result.path);
       return;
     }
@@ -204,6 +212,7 @@ async function generateManifest() {
   try {
     const data = await api('/api/manifest', { method: 'POST', body: JSON.stringify({ input_path: state.inputPath, paired_end: state.scan.paired_end }) });
     showScan(data.scan);
+    await loadManifestPreview(data.path);
     toast('manifest 已生成，后续可以直接准备 metadata。', true);
   } catch (error) { toast(error.message); }
   finally { setBusy($('manifestButton'), false); }
@@ -218,10 +227,211 @@ async function generateMetadata() {
     state.metadataValid = false;
     $('metadataPath').value = data.path;
     $('metadataName').textContent = '已生成模板，请确认分组值';
+    await loadMetadataPreview(data.path);
     await validateMetadata(data.path);
     toast(`metadata 模板已生成，包含 ${data.sample_count} 个样本。`, true);
   } catch (error) { toast(error.message); }
   finally { setBusy($('metadataButton'), false); }
+}
+
+function metadataGroupColumn(editor = state.metadataEditor) {
+  if (!editor) return '';
+  return editor.headers.find((header) => header.toLowerCase() === 'group') || editor.headers.find((header) => header.toLowerCase().includes('group')) || editor.headers[1] || '';
+}
+
+function renderMetadataGroups() {
+  const target = $('groupList');
+  const editor = state.metadataEditor;
+  if (!target || !editor) return;
+  const column = metadataGroupColumn(editor);
+  const existing = editor.rows.map((row) => row[column] || '').filter(Boolean);
+  editor.groups = [...new Set([...(editor.groups || []), ...existing])];
+  target.innerHTML = editor.groups.length
+    ? editor.groups.map((group) => `<button type="button" class="group-chip" data-remove-group="${escapeHtml(group)}"><span>${escapeHtml(group)}</span><b>×</b></button>`).join('')
+    : '<span class="group-empty">还没有组；先新建 control、treatment 等组</span>';
+}
+
+function renderMetadataTable() {
+  const table = $('metadataEditorTable');
+  const editor = state.metadataEditor;
+  if (!table || !editor) return;
+  const groupColumn = metadataGroupColumn(editor);
+  const groupOptions = [...new Set([...(editor.groups || []), ...editor.rows.map((row) => row[groupColumn] || '').filter(Boolean)])];
+  const header = editor.headers.map((column, index) => `<th><div>${escapeHtml(column)}${index ? `<small>${escapeHtml(editor.types[index] || '未声明')}</small>` : '<small>样本 ID</small>'}</div>${index ? `<button type="button" class="table-delete" data-remove-column="${escapeHtml(column)}" title="删除这一列">×</button>` : ''}</th>`).join('');
+  const body = editor.rows.map((row, rowIndex) => {
+    const cells = editor.headers.map((column, columnIndex) => {
+      const value = row[column] || '';
+      const common = `data-meta-row="${rowIndex}" data-meta-column="${escapeHtml(column)}"`;
+      if (column === groupColumn && columnIndex > 0) {
+        const options = ['<option value="">未填写</option>', ...groupOptions.map((option) => `<option value="${escapeHtml(option)}" ${option === value ? 'selected' : ''}>${escapeHtml(option)}</option>`)].join('');
+        return `<td><select class="table-control" ${common}>${options}</select></td>`;
+      }
+      const inputType = editor.types[columnIndex] === 'numeric' ? 'number' : 'text';
+      return `<td><input class="table-control" type="${inputType}" ${common} value="${escapeHtml(value)}" placeholder="${column === groupColumn ? '请选择组' : '可留空'}"></td>`;
+    }).join('');
+    return `<tr>${cells}<td class="row-actions"><button type="button" class="table-delete" data-remove-metadata-row="${rowIndex}" title="删除这一行">删除</button></td></tr>`;
+  }).join('');
+  table.innerHTML = `<thead><tr>${header}<th class="actions-heading">操作</th></tr></thead><tbody>${body || '<tr><td class="table-empty" colspan="99">还没有样本行</td></tr>'}</tbody>`;
+  const summary = $('metadataEditorSummary');
+  if (summary) summary.textContent = `${editor.rows.length} 个样本 · ${editor.headers.length - 1} 个 metadata 列 · 空白单元格会按 QIIME2 缺失值处理`;
+  const badge = $('metadataEditorBadge');
+  if (badge) badge.textContent = `${editor.rows.length} samples · ${editor.headers.length} columns`;
+}
+
+function renderMetadataEditor(preview) {
+  state.metadataEditor = {
+    path: preview.path,
+    headers: [...(preview.headers || [])],
+    types: [...(preview.types || [])],
+    rows: (preview.rows || []).map((row) => ({ ...row })),
+    groups: [],
+  };
+  if (!state.metadataEditor.types.length) state.metadataEditor.types = state.metadataEditor.headers.map((_, index) => index ? 'categorical' : '');
+  $('metadataEditorCard').hidden = false;
+  renderMetadataGroups();
+  renderMetadataTable();
+}
+
+async function loadMetadataPreview(path, silent = false) {
+  if (!path) return false;
+  try {
+    const data = await api('/api/metadata-preview', { method: 'POST', body: JSON.stringify({ path }) });
+    renderMetadataEditor(data.preview);
+    return true;
+  } catch (error) {
+    if (!silent) toast(`metadata 预览失败：${error.message}`);
+    return false;
+  }
+}
+
+function addMetadataGroup() {
+  const editor = state.metadataEditor;
+  const input = $('groupNameInput');
+  const group = input?.value.trim();
+  if (!editor || !group) { toast('请输入组名，例如 control 或 treatment。'); return; }
+  if (!editor.groups.includes(group)) editor.groups.push(group);
+  input.value = '';
+  renderMetadataGroups();
+  renderMetadataTable();
+}
+
+function addMetadataColumn() {
+  const editor = state.metadataEditor;
+  if (!editor) return;
+  const name = window.prompt('请输入新列名，例如 timepoint、site 或 treatment：', 'timepoint')?.trim();
+  if (!name) return;
+  if (name.toLowerCase() === 'sample-id' || editor.headers.some((header) => header.toLowerCase() === name.toLowerCase())) {
+    toast('这个列名已经存在，或不能使用 sample-id。');
+    return;
+  }
+  const type = (window.prompt('请选择列类型：categorical（分类）或 numeric（数值）', 'categorical') || 'categorical').trim().toLowerCase();
+  if (!['categorical', 'numeric'].includes(type)) { toast('列类型只能是 categorical 或 numeric。'); return; }
+  editor.headers.push(name);
+  editor.types.push(type);
+  editor.rows.forEach((row) => { row[name] = ''; });
+  renderMetadataTable();
+}
+
+function removeMetadataColumn(name) {
+  const editor = state.metadataEditor;
+  if (!editor || editor.headers.length <= 2) { toast('至少保留一个 metadata 列，方便后续分组分析。'); return; }
+  if (!window.confirm(`确定删除“${name}”这一列吗？`)) return;
+  const index = editor.headers.indexOf(name);
+  if (index < 1) return;
+  editor.headers.splice(index, 1);
+  editor.types.splice(index, 1);
+  editor.rows.forEach((row) => { delete row[name]; });
+  renderMetadataGroups();
+  renderMetadataTable();
+}
+
+function removeMetadataGroup(group) {
+  const editor = state.metadataEditor;
+  if (!editor) return;
+  const column = metadataGroupColumn(editor);
+  editor.groups = (editor.groups || []).filter((value) => value !== group);
+  editor.rows.forEach((row) => { if (row[column] === group) row[column] = ''; });
+  renderMetadataGroups();
+  renderMetadataTable();
+}
+
+function addMetadataRow() {
+  const editor = state.metadataEditor;
+  if (!editor) return;
+  const row = {};
+  editor.headers.forEach((header) => { row[header] = ''; });
+  editor.rows.push(row);
+  renderMetadataTable();
+}
+
+async function saveMetadataEditor() {
+  const editor = state.metadataEditor;
+  if (!editor) return;
+  setBusy($('metadataSaveButton'), true, '保存中…');
+  try {
+    const data = await api('/api/metadata-save', { method: 'POST', body: JSON.stringify({ path: editor.path, headers: editor.headers, types: editor.types, rows: editor.rows }) });
+    state.metadata = data.path;
+    $('metadataPath').value = data.path;
+    $('metadataName').textContent = '已保存并更新到服务器';
+    renderMetadataEditor(data.preview);
+    await validateMetadata(data.path);
+    toast('metadata 已保存，可以继续配置分析。', true);
+  } catch (error) { toast(`metadata 保存失败：${error.message}`); }
+  finally { setBusy($('metadataSaveButton'), false); }
+}
+
+async function loadManifestPreview(path, silent = true) {
+  if (!path || !state.scan?.data_type?.startsWith('manifest')) return false;
+  try {
+    const data = await api('/api/manifest-preview', { method: 'POST', body: JSON.stringify({ path }) });
+    state.manifestEditor = { ...data.preview, rows: (data.preview.rows || []).map((row) => ({ ...row })) };
+    renderManifestEditor();
+    return true;
+  } catch (error) {
+    if (!silent) toast(`manifest 预览失败：${error.message}`);
+    return false;
+  }
+}
+
+function renderManifestEditor() {
+  const editor = state.manifestEditor;
+  const card = $('manifestEditorCard');
+  const table = $('manifestEditorTable');
+  if (!editor || !card || !table) return;
+  card.hidden = false;
+  $('manifestEditorBadge').textContent = `${editor.sample_count || editor.rows.length} samples · ${editor.data_type === 'manifest_paired' ? '双端' : '单端'}`;
+  $('manifestEditorSummary').textContent = `${editor.rows.length} 个样本 · ${editor.fastq_count || 0} 个 FASTQ 路径 · ${editor.missing_files?.length || 0} 个路径待确认`;
+  const header = editor.headers.map((column) => `<th>${escapeHtml(column)}</th>`).join('');
+  const body = editor.rows.map((row, rowIndex) => {
+    const status = editor.path_status?.[rowIndex]?.files || [];
+    const good = status.length > 0 && status.every((item) => item.exists);
+    const cells = editor.headers.map((column) => `<td><input class="table-control" data-manifest-row="${rowIndex}" data-manifest-column="${escapeHtml(column)}" value="${escapeHtml(row[column] || '')}"></td>`).join('');
+    return `<tr>${cells}<td class="path-state ${good ? 'good' : 'warn'}">${good ? '✓ 已找到' : '待匹配'}</td><td class="row-actions"><button type="button" class="table-delete" data-remove-manifest-row="${rowIndex}">删除</button></td></tr>`;
+  }).join('');
+  table.innerHTML = `<thead><tr>${header}<th>文件状态</th><th class="actions-heading">操作</th></tr></thead><tbody>${body || '<tr><td class="table-empty" colspan="99">还没有样本行</td></tr>'}</tbody>`;
+}
+
+function addManifestRow() {
+  const editor = state.manifestEditor;
+  if (!editor) return;
+  const row = {};
+  editor.headers.forEach((header) => { row[header] = ''; });
+  editor.rows.push(row);
+  renderManifestEditor();
+}
+
+async function saveManifestEditor() {
+  const editor = state.manifestEditor;
+  if (!editor) return;
+  setBusy($('manifestSaveButton'), true, '保存中…');
+  try {
+    const data = await api('/api/manifest-save', { method: 'POST', body: JSON.stringify({ path: editor.path, data_type: editor.data_type, rows: editor.rows }) });
+    showScan(data.scan, false);
+    state.manifestEditor = data.preview;
+    renderManifestEditor();
+    toast('manifest 已保存，序列文件识别结果已刷新。', true);
+  } catch (error) { toast(`manifest 保存失败：${error.message}`); }
+  finally { setBusy($('manifestSaveButton'), false); }
 }
 
 async function validateMetadata(path, silent = false) {
@@ -231,7 +441,7 @@ async function validateMetadata(path, silent = false) {
     state.metadataValid = Boolean(data.validation?.valid);
     const validation = data.validation || {};
     $('metadataValidation').textContent = state.metadataValid
-      ? `✓ 已通过 · ${validation.sample_count || 0} 个样本 · ${validation.columns?.length || 0} 列`
+      ? `✓ 已通过 · ${validation.sample_count || 0} 个样本 · ${validation.columns?.length || 0} 列${validation.warnings?.length ? ` · ${validation.warnings.length} 个空值按缺失处理` : ''}`
       : `! ${[...(validation.errors || []), ...(validation.warnings || [])].join('；') || 'metadata 需要修正'}`;
     $('metadataValidation').className = `validation-note ${state.metadataValid ? 'good' : 'warn'}`;
     if (!state.metadataValid && !silent) toast((validation.errors || ['metadata 校验失败']).join('；'));
@@ -251,6 +461,28 @@ function environmentLabel(environment) {
   return `${environment.name} · 未找到 QIIME2${environment.active ? ' · 当前环境' : ''}`;
 }
 
+function updateFigaroStatus(environment = state.selectedEnvironment) {
+  const button = $('figaroInstallButton');
+  if (!button) return;
+  if (!environment) {
+    $('figaroValue').textContent = 'Figaro 待检测';
+    $('figaroDesc').textContent = '选中 QIIME2 环境后，程序会检查 Figaro。';
+    button.disabled = true;
+    return;
+  }
+  if (environment.figaro_available) {
+    $('figaroValue').textContent = `Figaro READY${environment.figaro_version ? ` · ${environment.figaro_version}` : ''}`;
+    $('figaroDesc').textContent = '当前环境可以自动估算截断长度。';
+    button.disabled = true;
+    button.textContent = '已安装';
+  } else {
+    $('figaroValue').textContent = 'Figaro 未安装';
+    $('figaroDesc').textContent = state.platform === 'posix' && state.condaAvailable ? '可以一键安装到当前选中的 Conda 环境。' : '目标服务器需要 Linux + Conda 才能一键安装。';
+    button.disabled = !(state.platform === 'posix' && state.condaAvailable);
+    button.textContent = '一键安装 Figaro';
+  }
+}
+
 async function loadEnvironments() {
   const select = $('environmentSelect');
   select.innerHTML = '<option value="">正在执行 conda env list…</option>';
@@ -258,6 +490,7 @@ async function loadEnvironments() {
   try {
     const data = await api('/api/environments');
     state.condaAvailable = Boolean(data.conda_available);
+    state.environments = data.environments || [];
     select.innerHTML = '<option value="">请选择可用的 QIIME2 环境</option>';
     const usable = [];
     (data.environments || []).forEach((environment) => {
@@ -271,6 +504,7 @@ async function loadEnvironments() {
     state.environmentReady = usable.length > 0;
     if (usable.length) {
       const active = usable.find((environment) => environment.active) || usable[0];
+      state.selectedEnvironment = active;
       state.qiimeEnv = active.name;
       select.value = active.name;
       $('environmentStatus').textContent = `✓ 已选中 ${environmentLabel(active)}，点击底部按钮即可运行。`;
@@ -279,8 +513,10 @@ async function loadEnvironments() {
       $('qiimeDesc').textContent = `已找到 ${usable.length} 个可用的 QIIME2 环境。`;
       $('installHelper').hidden = true;
       markStep('runtime', 'done', '已就绪');
+      updateFigaroStatus(active);
     } else {
       state.qiimeEnv = '';
+      state.selectedEnvironment = null;
       $('environmentStatus').textContent = data.error || (state.condaAvailable ? '找到了 Conda，但没有环境包含 QIIME2。' : '没有找到 Conda，请在 Linux 服务器检查安装。');
       $('environmentStatus').className = 'environment-status warn';
       $('qiimeValue').textContent = 'NEEDS INSTALL';
@@ -288,6 +524,7 @@ async function loadEnvironments() {
       $('installHelper').hidden = false;
       markStep('runtime', 'blocked', '需要安装');
       await loadInstallOptions();
+      updateFigaroStatus(null);
     }
   } catch (error) {
     state.environmentReady = false;
@@ -298,6 +535,7 @@ async function loadEnvironments() {
     $('installHelper').hidden = false;
     markStep('runtime', 'blocked', '检查失败');
     await loadInstallOptions();
+    updateFigaroStatus(null);
   } finally {
     $('refreshEnvironments').disabled = false;
     updateReadiness();
@@ -366,6 +604,105 @@ async function installQiime() {
     setBusy($('installButton'), false);
     toast(error.message);
   }
+}
+
+function setClassifier(path, label = '已选择分类器') {
+  state.classifier = path || '';
+  $('classifierPath').value = state.classifier;
+  $('classifierName').textContent = state.classifier ? `${label} · ${state.classifier}` : '未选择分类器';
+  updateReadiness();
+}
+
+function renderClassifierCatalog() {
+  const target = $('classifierCatalog');
+  if (!target) return;
+  if (!state.classifierCatalog.length) {
+    target.innerHTML = '<div class="catalog-loading">暂时没有可用的官方分类器。</div>';
+    return;
+  }
+  target.innerHTML = state.classifierCatalog.map((item) => `<div class="catalog-card ${item.downloaded ? 'downloaded' : ''}"><div><div class="catalog-title"><strong>${escapeHtml(item.name)}</strong>${item.recommended ? '<span class="catalog-recommended">推荐</span>' : ''}</div><small>${escapeHtml(item.description)}</small><code>${escapeHtml(item.filename)}</code></div><button type="button" class="subtle-button classifier-action" data-classifier-id="${escapeHtml(item.id)}" data-downloaded="${item.downloaded}">${item.downloaded ? (state.classifier === item.path ? '当前使用' : '使用此分类器') : '下载到项目'}</button></div>`).join('');
+}
+
+async function loadClassifiers() {
+  try {
+    const data = await api('/api/classifiers');
+    state.classifierCatalog = data.catalog || [];
+    if (!state.classifier && data.default) setClassifier(data.default, '默认分类器');
+    renderClassifierCatalog();
+  } catch (error) {
+    $('classifierCatalog').innerHTML = `<div class="catalog-loading">官方分类器读取失败：${escapeHtml(error.message)}</div>`;
+  }
+}
+
+async function downloadClassifier(id, button) {
+  const item = state.classifierCatalog.find((value) => value.id === id);
+  if (!item) return;
+  if (item.downloaded) { setClassifier(item.path, '已选择项目内分类器'); renderClassifierCatalog(); return; }
+  if (button) { button.disabled = true; button.innerHTML = '<span class="button-spinner"></span>准备下载…'; }
+  try {
+    const started = await api('/api/classifiers/download', { method: 'POST', body: JSON.stringify({ id }) });
+    const poll = async () => {
+      const current = await api(`/api/download-jobs/${started.job_id}`);
+      const percent = Number(current.job.percent || 0);
+      if (button) button.textContent = current.job.status === 'running' ? `下载中 ${percent}%` : '下载完成';
+      if (current.job.status === 'running') { window.setTimeout(poll, 800); return; }
+      if (current.job.status !== 'completed') throw new Error(current.job.error || '分类器下载失败');
+      setClassifier(current.job.path, '已下载到项目文件夹');
+      await loadClassifiers();
+      toast('官方分类器已下载，并已设为当前分类器。', true);
+    };
+    await poll();
+  } catch (error) {
+    if (button) { button.disabled = false; button.textContent = item.downloaded ? '使用此分类器' : '下载到项目'; }
+    toast(error.message);
+  }
+}
+
+async function installFigaro() {
+  if (!state.selectedEnvironment?.name) { toast('请先选择一个 QIIME2 Conda 环境。'); return; }
+  setBusy($('figaroInstallButton'), true, '安装中…');
+  $('figaroDesc').textContent = '正在把 Figaro 安装到当前选中的环境，请耐心等待。';
+  try {
+    const started = await api('/api/figaro/install', { method: 'POST', body: JSON.stringify({ environment_name: state.selectedEnvironment.name }) });
+    const poll = async () => {
+      const current = await api(`/api/install-jobs/${started.job_id}`);
+      $('figaroDesc').textContent = current.job.output || current.job.status;
+      if (current.job.status === 'running') { window.setTimeout(poll, 1200); return; }
+      setBusy($('figaroInstallButton'), false);
+      await loadEnvironments();
+      toast(current.job.status === 'completed' ? 'Figaro 安装完成，后续分析会自动使用它。' : 'Figaro 安装失败，请查看提示信息。', current.job.status === 'completed');
+    };
+    window.setTimeout(poll, 600);
+  } catch (error) {
+    setBusy($('figaroInstallButton'), false);
+    toast(error.message);
+  }
+}
+
+function closeDirectoryPicker() {
+  $('directoryModal').hidden = true;
+}
+
+async function loadDirectories(path = '') {
+  try {
+    const data = await api(`/api/directories?path=${encodeURIComponent(path)}`);
+    state.directory = data;
+    $('directoryModal').hidden = false;
+    $('directoryPathInput').value = data.current || '';
+    $('directoryCurrentLabel').textContent = data.current || '';
+    $('directoryParentButton').disabled = !data.parent;
+    $('directoryList').innerHTML = (data.directories || []).length
+      ? data.directories.map((directory) => `<button type="button" class="directory-entry" data-directory-path="${escapeHtml(directory.path)}"><span>▸</span><strong>${escapeHtml(directory.name)}</strong></button>`).join('')
+      : '<div class="directory-empty">当前目录没有可进入的子目录。</div>';
+  } catch (error) { toast(`读取目录失败：${error.message}`); }
+}
+
+function chooseCurrentDirectory() {
+  const value = state.directory?.current || readValue('directoryPathInput');
+  if (value) $('outputPath').value = value;
+  closeDirectoryPicker();
+  updateReadiness();
+  toast('输出目录已选择。', true);
 }
 
 function samplingIsValid() {
@@ -491,23 +828,84 @@ document.addEventListener('DOMContentLoaded', () => {
   bind('metadataPicker', 'change', (event) => uploadFiles(event.target, 'metadata'));
   bind('manifestButton', 'click', generateManifest);
   bind('metadataButton', 'click', generateMetadata);
+  bind('manifestAddRowButton', 'click', addManifestRow);
+  bind('manifestPreviewButton', 'click', () => loadManifestPreview(state.manifestEditor?.path || state.inputPath, false));
+  bind('manifestSaveButton', 'click', saveManifestEditor);
+  bind('metadataAddColumnButton', 'click', addMetadataColumn);
+  bind('metadataPreviewButton', 'click', () => loadMetadataPreview(state.metadata || readValue('metadataPath'), false));
+  bind('metadataValidateButton', 'click', () => validateMetadata(state.metadata || readValue('metadataPath')));
+  bind('metadataSaveButton', 'click', saveMetadataEditor);
+  bind('addGroupButton', 'click', addMetadataGroup);
+  bind('groupNameInput', 'keydown', (event) => { if (event.key === 'Enter') addMetadataGroup(); });
   bind('runButton', 'click', runAnalysis);
   bind('refreshEnvironments', 'click', loadEnvironments);
   bind('environmentSelect', 'change', (event) => {
     state.qiimeEnv = event.target.value;
-    state.environmentReady = Boolean(state.qiimeEnv);
+    state.selectedEnvironment = state.environments.find((environment) => environment.name === state.qiimeEnv) || null;
+    state.environmentReady = Boolean(state.selectedEnvironment?.qiime_available);
     $('environmentStatus').textContent = state.qiimeEnv ? `✓ 已选择 ${state.qiimeEnv}` : '请选择包含 QIIME2 的环境';
     $('environmentStatus').className = `environment-status ${state.qiimeEnv ? 'good' : 'warn'}`;
+    updateFigaroStatus(state.selectedEnvironment);
     updateReadiness();
   });
   bind('installVersion', 'change', updateInstallSummary);
   bind('installDistribution', 'change', updateInstallSummary);
   bind('installEnvironmentName', 'input', updateInstallSummary);
   bind('installButton', 'click', installQiime);
+  bind('figaroInstallButton', 'click', installFigaro);
   bind('metadataPath', 'input', () => { state.metadata = readValue('metadataPath'); state.metadataValid = false; $('metadataName').textContent = state.metadata ? '等待校验服务器路径' : '未选择 metadata'; updateReadiness(); });
   bind('metadataPath', 'blur', () => validateMetadata(readValue('metadataPath'), true));
   bind('classifierPath', 'input', () => { state.classifier = readValue('classifierPath'); $('classifierName').textContent = state.classifier ? '使用服务器路径' : '未选择分类器'; updateReadiness(); });
+  bind('outputPickerButton', 'click', () => loadDirectories(readValue('outputPath')));
+  bind('directoryCloseButton', 'click', closeDirectoryPicker);
+  bind('directoryGoButton', 'click', () => loadDirectories(readValue('directoryPathInput')));
+  bind('directoryPathInput', 'keydown', (event) => { if (event.key === 'Enter') loadDirectories(readValue('directoryPathInput')); });
+  bind('directoryParentButton', 'click', () => loadDirectories(state.directory?.parent || ''));
+  bind('directoryChooseButton', 'click', chooseCurrentDirectory);
+  $('classifierCatalog')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-classifier-id]');
+    if (button) downloadClassifier(button.dataset.classifierId, button);
+  });
+  $('groupList')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-remove-group]');
+    if (button) removeMetadataGroup(button.dataset.removeGroup);
+  });
+  $('metadataEditorTable')?.addEventListener('input', (event) => {
+    const target = event.target.closest('[data-meta-row][data-meta-column]');
+    if (!target || !state.metadataEditor) return;
+    state.metadataEditor.rows[Number(target.dataset.metaRow)][target.dataset.metaColumn] = target.value;
+    state.metadataValid = false;
+    updateReadiness();
+  });
+  $('metadataEditorTable')?.addEventListener('change', (event) => {
+    const target = event.target.closest('[data-meta-row][data-meta-column]');
+    if (!target || !state.metadataEditor) return;
+    state.metadataEditor.rows[Number(target.dataset.metaRow)][target.dataset.metaColumn] = target.value;
+    if (target.dataset.metaColumn === metadataGroupColumn()) renderMetadataGroups();
+    state.metadataValid = false;
+    updateReadiness();
+  });
+  $('metadataEditorTable')?.addEventListener('click', (event) => {
+    const column = event.target.closest('[data-remove-column]')?.dataset.removeColumn;
+    if (column) removeMetadataColumn(column);
+    const row = event.target.closest('[data-remove-metadata-row]')?.dataset.removeMetadataRow;
+    if (row !== undefined && window.confirm('确定删除这个样本吗？')) { state.metadataEditor.rows.splice(Number(row), 1); renderMetadataGroups(); renderMetadataTable(); state.metadataValid = false; updateReadiness(); }
+  });
+  $('manifestEditorTable')?.addEventListener('input', (event) => {
+    const target = event.target.closest('[data-manifest-row][data-manifest-column]');
+    if (target && state.manifestEditor) state.manifestEditor.rows[Number(target.dataset.manifestRow)][target.dataset.manifestColumn] = target.value;
+  });
+  $('manifestEditorTable')?.addEventListener('click', (event) => {
+    const row = event.target.closest('[data-remove-manifest-row]')?.dataset.removeManifestRow;
+    if (row !== undefined && window.confirm('确定删除这个 manifest 样本吗？')) { state.manifestEditor.rows.splice(Number(row), 1); renderManifestEditor(); }
+  });
+  $('directoryList')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-directory-path]');
+    if (button) loadDirectories(button.dataset.directoryPath);
+  });
+  $('directoryModal')?.addEventListener('click', (event) => { if (event.target.id === 'directoryModal') closeDirectoryPicker(); });
   $$('input[name="samplingMode"]').forEach((input) => input.addEventListener('change', updateSamplingMode));
   ['samplingDepth', 'skipTaxonomy', 'noTrim', 'noFilter', 'noFigaro', 'skipDiversity', 'skipAncom'].forEach((id) => bind(id, 'input', updateReadiness));
+  loadClassifiers();
   checkHealth();
 });

@@ -36,6 +36,11 @@ class CommandRunner:
     def available(self, executable: str) -> bool:
         return shutil.which(executable) is not None
 
+    def _prepare(self, values: list[str]) -> list[str]:
+        if self.command_prefix and values and values[0] in {"qiime", "figaro", "biom"}:
+            return [*self.command_prefix, *values]
+        return values
+
     def missing(self, executables: Iterable[str]) -> list[str]:
         return [name for name in executables if not self.available(name)]
 
@@ -45,9 +50,7 @@ class CommandRunner:
             raise CommandError(list(missing), f"缺少外部命令: {', '.join(missing)}。请在 QIIME2 环境中运行，或先使用 scan/serve 检查输入。")
 
     def run(self, command: Iterable[str], log_name: str | None = None) -> subprocess.CompletedProcess:
-        values = [str(value) for value in command]
-        if self.command_prefix and values and values[0] == "qiime":
-            values = [*self.command_prefix, *values]
+        values = self._prepare([str(value) for value in command])
         print(f"\n$ {command_text(values)}")
         if self.dry_run:
             return subprocess.CompletedProcess(values, 0, "[dry-run]\n", "")
@@ -65,3 +68,15 @@ class CommandRunner:
         finally:
             if log_handle:
                 log_handle.close()
+
+    def probe(self, command: Iterable[str], timeout: int = 15) -> bool:
+        """Check a tool in the same environment that will execute the pipeline."""
+
+        if self.dry_run:
+            return True
+        values = self._prepare([str(value) for value in command])
+        try:
+            result = subprocess.run(values, check=False, capture_output=True, text=True, timeout=timeout)
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            return False
+        return result.returncode == 0

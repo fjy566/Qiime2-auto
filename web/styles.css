@@ -98,3 +98,61 @@ footer { display: flex; justify-content: space-between; padding: 25px 0 33px; co
 
 @media (max-width: 930px) { .hero { grid-template-columns: 1fr; min-height: auto; padding-top: 65px; }.hero-visual { max-width: 580px; margin: -10px auto 0; }.data-layout, .metadata-layout, .setup-grid, .run-layout { grid-template-columns: 1fr; }.data-side { min-height: auto; }.metric-grid { grid-template-columns: 1fr 1fr; }.parameter-grid { grid-template-columns: repeat(2, 1fr); }.toggle-grid { grid-template-columns: repeat(3, 1fr); }.runtime-card { min-height: auto; } }
 @media (max-width: 680px) { .topbar, main, footer { width: min(100% - 30px, 560px); }.topbar { height: 70px; }.top-meta { max-width: 210px; font-size: 9px; }.version { display: none; }.hero { padding: 56px 0 55px; }.hero h1 { font-size: clamp(42px, 13vw, 65px); }.lede { font-size: 15px; }.hero-actions { align-items: flex-start; flex-direction: column; gap: 17px; }.hero-trust { flex-wrap: wrap; gap: 8px 12px; font-size: 9px; }.hero-visual { height: 280px; transform: scale(.82); }.workflow-strip { grid-template-columns: 1fr 1fr; gap: 18px 10px; padding: 17px; }.workflow-line { display: none; }.workflow-step { grid-template-columns: 30px 1fr; }.workflow-number { width: 30px; height: 30px; }.workflow-step em { grid-column: 2; }.section { padding-top: 63px; }.section-heading { display: block; }.section-heading h2 { font-size: 29px; }.section-note { margin-top: 12px; }.data-panel, .metadata-panel, .setup-card, .options-card, .readiness-card, .run-card-content { padding: 21px; }.picker-deck, .metric-grid { grid-template-columns: 1fr; }.picker-tile { min-height: 108px; }.input-footer, .metadata-actions { align-items: flex-start; flex-direction: column; }.metadata-actions > span { text-align: left; }.option-group { display: block; }.sampling-control { margin-top: 18px; }.parameter-grid { grid-template-columns: 1fr 1fr; gap: 17px 12px; }.toggle-grid { grid-template-columns: 1fr; gap: 13px; }.run-card h3 { font-size: 26px; }.run-step { grid-template-columns: 25px 1fr; }.run-step small { grid-column: 2; text-align: left; }.result-card { padding: 21px; }footer { display: block; line-height: 2; }footer span { display: block; } }
+/* Interactive editors and resource pickers share the existing lab palette. */
+article[hidden], .modal-backdrop[hidden] { display: none !important; }
+.editor-card { margin-top: 17px; padding: 29px; overflow: hidden; }
+.editor-summary { margin: 15px 0 12px; padding: 10px 12px; color: var(--muted-dark); background: var(--paper-2); font: 10px var(--mono); }
+.table-scroll { width: 100%; overflow-x: auto; border: 1px solid var(--line-dark); }
+.editable-table { width: 100%; min-width: 760px; border-collapse: collapse; color: var(--ink); font-size: 12px; }
+.editable-table th, .editable-table td { min-width: 130px; padding: 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line-dark); }
+.editable-table th { position: relative; color: var(--muted-dark); background: var(--paper-2); font: 10px var(--mono); letter-spacing: .04em; white-space: nowrap; }
+.editable-table th small { display: block; margin-top: 4px; color: var(--teal-deep); font: 9px var(--body); letter-spacing: 0; }
+.editable-table tbody tr:last-child td { border-bottom: 0; }
+.table-control { width: 100%; min-width: 110px; padding: 8px; color: var(--ink); background: transparent; border: 1px solid transparent; border-bottom-color: #b8c0b7; outline: none; font: 12px var(--body); }
+.table-control:focus { background: #fffdf5; border-color: var(--teal-deep); }
+.table-delete { padding: 3px 6px; color: var(--muted-dark); background: transparent; border: 0; cursor: pointer; font: 10px var(--mono); }
+.table-delete:hover { color: var(--coral); }
+.row-actions, .actions-heading { min-width: 64px !important; text-align: center !important; }
+.table-empty { padding: 25px !important; color: var(--muted-dark); text-align: center !important; }
+.path-state { min-width: 78px !important; color: #a75d22; font: 10px var(--mono); white-space: nowrap; }
+.path-state.good { color: var(--teal-deep); }
+.editor-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 17px; }
+.group-toolbar { display: grid; grid-template-columns: 1fr minmax(280px, .7fr); gap: 20px; align-items: end; padding: 16px; background: var(--paper-2); }
+.toolbar-label { display: block; margin-bottom: 8px; color: var(--muted-dark); font: 10px var(--mono); }
+.group-list { display: flex; flex-wrap: wrap; gap: 7px; min-height: 32px; align-items: center; }
+.group-chip { display: inline-flex; gap: 8px; align-items: center; padding: 7px 9px; color: var(--ink); background: var(--teal); border: 0; cursor: pointer; font: 11px var(--body); }
+.group-chip b { font: 14px var(--mono); font-weight: 400; }
+.group-empty { color: var(--muted-dark); font: 11px var(--body); }
+.group-create { display: flex; gap: 8px; align-items: center; }
+.group-create .text-field { border-bottom-color: var(--ink); }
+.tool-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 14px; background: var(--paper-2); border-top: 1px solid var(--line-dark); }
+.tool-status strong, .tool-status small { display: block; }
+.tool-status strong { margin-top: 4px; font: 700 15px var(--display); }
+.tool-status small { margin-top: 3px; color: var(--muted-dark); font-size: 10px; line-height: 1.5; }
+.tool-kicker { color: var(--teal-deep); font: 9px var(--mono); letter-spacing: .12em; }
+.classifier-catalog { display: grid; gap: 8px; margin-top: 15px; }
+.catalog-card { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 11px; background: var(--paper-2); border-left: 3px solid var(--line-dark); }
+.catalog-card.downloaded { border-left-color: var(--teal-deep); }
+.catalog-title { display: flex; gap: 7px; align-items: center; }
+.catalog-title strong { font-size: 11px; }
+.catalog-card small { display: block; max-width: 360px; margin-top: 4px; color: var(--muted-dark); font-size: 10px; line-height: 1.45; }
+.catalog-card code { display: block; margin-top: 5px; color: #82918a; font: 9px var(--mono); word-break: break-all; }
+.catalog-recommended { padding: 3px 5px; color: var(--ink); background: var(--lime); font: 9px var(--mono); }
+.catalog-loading, .reference-note { color: var(--muted-dark); font-size: 10px; line-height: 1.55; }
+.reference-note { margin: 10px 0 0; }
+.option-path { border-bottom: 0; gap: 8px; }
+.option-path input { padding-right: 0; }
+.option-path .subtle-button { flex: 0 0 auto; white-space: nowrap; }
+.modal-backdrop { position: fixed; z-index: 25; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(3, 12, 11, .76); }
+.directory-modal { width: min(680px, 100%); max-height: min(720px, 90vh); padding: 27px; overflow: auto; color: var(--ink); background: var(--paper); box-shadow: var(--shadow); }
+.directory-path-row { display: flex; gap: 10px; align-items: center; margin-top: 17px; }
+.directory-path-row .text-field { border-bottom-color: var(--ink); }
+.directory-toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 14px 0 8px; }
+.directory-toolbar span { color: var(--muted-dark); font: 10px var(--mono); word-break: break-all; text-align: right; }
+.directory-list { display: grid; gap: 5px; max-height: 360px; padding: 8px; overflow: auto; background: var(--paper-2); }
+.directory-entry { display: flex; gap: 10px; align-items: center; padding: 10px; color: var(--ink); background: transparent; border: 0; cursor: pointer; text-align: left; }
+.directory-entry:hover { background: var(--teal); }
+.directory-entry span { color: var(--teal-deep); }
+.directory-entry strong { font-size: 12px; }
+.directory-empty { padding: 25px 10px; color: var(--muted-dark); font-size: 11px; text-align: center; }
+@media (max-width: 680px) { .editor-card { padding: 21px; }.editor-actions, .group-toolbar, .group-create { align-items: flex-start; flex-direction: column; }.group-toolbar { display: flex; }.group-create, .group-create .text-field, .group-create .subtle-button { width: 100%; }.catalog-card { align-items: flex-start; flex-direction: column; }.catalog-card .subtle-button { width: 100%; }.directory-modal { padding: 21px; }.directory-path-row { align-items: stretch; flex-direction: column; } }

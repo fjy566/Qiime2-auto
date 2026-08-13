@@ -65,6 +65,13 @@
           <div class="quick-flow"><div class="quick-flow-title"><span>WHAT HAPPENS NEXT</span><span>自动</span></div><div><i>01</i><span>读取表头与路径</span></div><div><i>02</i><span>匹配 R1 / R2 序列</span></div><div><i>03</i><span>准备 metadata</span></div></div>
         </aside>
       </div>
+      <article class="surface editor-card reveal" id="manifestEditorCard" hidden>
+        <div class="panel-head"><div><p class="card-label">MANIFEST EDITOR</p><h3>预览并修正 manifest</h3></div><span class="soft-badge" id="manifestEditorBadge">等待 manifest</span></div>
+        <p class="help-text">你可以直接修改样本 ID 和每个 R1 / R2 路径。保存前程序会检查重复样本和空路径；路径是否存在会在表格右侧提示。</p>
+        <div class="editor-summary" id="manifestEditorSummary">选择 manifest 后显示表格。</div>
+        <div class="table-scroll"><table class="editable-table" id="manifestEditorTable"></table></div>
+        <div class="editor-actions"><div class="small-actions"><button class="subtle-button" id="manifestAddRowButton">＋ 添加样本</button><button class="subtle-button" id="manifestPreviewButton">重新读取</button></div><button class="button button-dark" id="manifestSaveButton">保存 manifest</button></div>
+      </article>
     </section>
 
     <section class="section section-light" id="metadata-section">
@@ -79,6 +86,14 @@
         </article>
         <aside class="metadata-explain reveal delay-2"><div class="explain-number">02</div><h3>不确定怎么填？</h3><p>第一次使用可以先生成模板。打开生成的文件，把每个样本对应的 group 改成真实分组，再回来选择它。</p><div class="example-table"><div><span>sample-id</span><span>group</span></div><div><span>sample01</span><span>control</span></div><div><span>sample02</span><span>treatment</span></div></div><small>校验会检查重复 ID、空值和分组列。</small></aside>
       </div>
+      <article class="surface editor-card metadata-editor-card reveal" id="metadataEditorCard" hidden>
+        <div class="panel-head"><div><p class="card-label">METADATA EDITOR</p><h3>给每个样本安排分组</h3></div><span class="soft-badge" id="metadataEditorBadge">等待 metadata</span></div>
+        <p class="help-text">最简单的用法：先新建几个组，再在表格里为每个样本选择组。你也可以添加时间点、地点、处理方式等列；数值列用于年龄、浓度等连续数据。</p>
+        <div class="group-toolbar"><div><span class="toolbar-label">分组值</span><div class="group-list" id="groupList"></div></div><div class="group-create"><input id="groupNameInput" class="text-field" placeholder="例如 control / treatment"><button class="subtle-button" id="addGroupButton">＋ 新建组</button></div></div>
+        <div class="editor-summary" id="metadataEditorSummary">选择 metadata 后显示表格。</div>
+        <div class="table-scroll"><table class="editable-table" id="metadataEditorTable"></table></div>
+        <div class="editor-actions"><div class="small-actions"><button class="subtle-button" id="metadataAddColumnButton">＋ 添加列</button><button class="subtle-button" id="metadataPreviewButton">重新读取</button></div><div class="small-actions"><button class="subtle-button" id="metadataValidateButton">校验</button><button class="button button-dark" id="metadataSaveButton">保存 metadata</button></div></div>
+      </article>
     </section>
 
     <section class="section" id="configuration">
@@ -90,6 +105,7 @@
           <select id="environmentSelect" class="select-field"><option value="">正在检查 Conda 环境…</option></select>
           <div class="environment-status" id="environmentStatus">正在准备环境检查</div>
           <div class="runtime-mini"><span class="metric-icon">⌘</span><div><strong id="qiimeValue">检测中</strong><small id="qiimeDesc">正在检查可用的 QIIME2 环境。</small></div></div>
+          <div class="tool-status"><div><span class="tool-kicker">OPTIONAL TOOL</span><strong id="figaroValue">Figaro 检测中</strong><small id="figaroDesc">Figaro 会帮助估算更合适的截断长度。</small></div><button class="subtle-button" id="figaroInstallButton" disabled>一键安装 Figaro</button></div>
           <div class="install-helper" id="installHelper" hidden>
             <div class="helper-title"><span class="warning-mark">!</span><strong>还没有可用的 QIIME2</strong></div>
             <p>选择一个版本，点击一次即可创建新的 Conda 环境。安装只在 Linux 目标服务器执行。</p>
@@ -106,6 +122,8 @@
           <label class="file-row compact-file-row"><span class="file-row-icon">◎</span><span><strong>选择分类器 .qza</strong><small>例如 SILVA / Greengenes 训练好的分类器</small></span><input id="classifierPicker" type="file" accept=".qza"></label>
           <input id="classifierPath" class="text-field" placeholder="或者填写服务器上的分类器路径">
           <div class="selection-note" id="classifierName">未选择分类器</div>
+          <div class="classifier-catalog" id="classifierCatalog"><div class="catalog-loading">正在读取官方分类器…</div></div>
+          <p class="reference-note" id="classifierSourceNote">官方分类器会下载到项目文件夹 classifiers/；下载完成后会自动成为默认选择。</p>
           <div class="divider"></div>
           <label class="toggle-line"><input id="skipTaxonomy" type="checkbox"><span class="fake-check"></span><span><strong>这次跳过物种分类</strong><small>没有分类器时可以先做去噪和多样性分析</small></span></label>
         </article>
@@ -114,7 +132,7 @@
       <article class="surface options-card reveal delay-3">
         <div class="panel-head"><div><p class="card-label">ANALYSIS OPTIONS</p><h3>分析参数</h3></div><span class="soft-badge">默认值可直接运行</span></div>
         <div class="option-group sampling-group"><div class="option-copy"><strong>采样深度</strong><p>每个样本保留多少条序列用于公平比较。自动模式会根据实际测序量选择共同深度。</p></div><div class="sampling-control"><div class="segmented"><label><input type="radio" name="samplingMode" value="auto" checked><span>自动推荐</span></label><label><input type="radio" name="samplingMode" value="custom"><span>我来定义</span></label></div><input id="samplingDepth" class="text-field" type="number" min="1" placeholder="例如 10000" disabled><p class="field-help" id="samplingDepthHelp">自动模式会先查看每个样本的有效序列量，再选择尽量保留样本的共同深度；第一次分析推荐使用它。</p></div></div>
-        <div class="parameter-grid"><label>正向引物<input id="primerF" class="text-field" placeholder="可留空，例如 GTGCCAGCMGCCGCGGTAA"><small>只有需要去引物时填写</small></label><label>反向引物<input id="primerR" class="text-field" placeholder="双端数据再填写"><small>paired-end 数据的反向引物</small></label><label>正向截断长度<input id="truncLenF" class="text-field" type="number" value="250" min="1"><small>默认 250 bp</small></label><label>反向截断长度<input id="truncLenR" class="text-field" type="number" value="220" min="1"><small>默认 220 bp</small></label><label>最低质量<input id="minQuality" class="text-field" type="number" value="20" min="0"><small>低于此值的碱基会被过滤</small></label><label>最低特征频率<input id="minFrequency" class="text-field" type="number" value="10" min="0"><small>过滤极低频特征</small></label><label>Phred 偏移<select id="phredOffset" class="select-field"><option value="33">33（常见）</option><option value="64">64</option></select><small>不确定时保留 33</small></label><label>结果保存到<input id="outputPath" class="text-field" value="qiime2_analysis" placeholder="例如 /data/results"><small>服务器上的输出目录</small></label></div>
+        <div class="parameter-grid"><label>正向引物<input id="primerF" class="text-field" placeholder="可留空，例如 GTGCCAGCMGCCGCGGTAA"><small>只有需要去引物时填写</small></label><label>反向引物<input id="primerR" class="text-field" placeholder="双端数据再填写"><small>paired-end 数据的反向引物</small></label><label>正向截断长度<input id="truncLenF" class="text-field" type="number" value="250" min="1"><small>默认 250 bp</small></label><label>反向截断长度<input id="truncLenR" class="text-field" type="number" value="220" min="1"><small>默认 220 bp</small></label><label>最低质量<input id="minQuality" class="text-field" type="number" value="20" min="0"><small>低于此值的碱基会被过滤</small></label><label>最低特征频率<input id="minFrequency" class="text-field" type="number" value="10" min="0"><small>过滤极低频特征</small></label><label>Phred 偏移<select id="phredOffset" class="select-field"><option value="33">33（常见）</option><option value="64">64</option></select><small>不确定时保留 33</small></label><label>结果保存到<div class="path-row option-path"><input id="outputPath" class="text-field" value="qiime2_analysis" placeholder="例如 /data/results"><button class="subtle-button" id="outputPickerButton" type="button">选择目录</button></div><small>服务器上的输出目录；程序会自动创建分析子目录</small></label></div>
         <div class="toggle-grid"><label class="toggle-line"><input id="noTrim" type="checkbox"><span class="fake-check"></span><span><strong>跳过引物去除</strong><small>不使用 cutadapt</small></span></label><label class="toggle-line"><input id="noFilter" type="checkbox"><span class="fake-check"></span><span><strong>跳过质量过滤</strong><small>保留原始质量</small></span></label><label class="toggle-line"><input id="noFigaro" type="checkbox"><span class="fake-check"></span><span><strong>跳过 Figaro</strong><small>使用手动截断值</small></span></label><label class="toggle-line"><input id="skipDiversity" type="checkbox"><span class="fake-check"></span><span><strong>跳过多样性</strong><small>不生成 core metrics</small></span></label><label class="toggle-line"><input id="skipAncom" type="checkbox"><span class="fake-check"></span><span><strong>跳过 ANCOM</strong><small>不做差异分析</small></span></label></div>
       </article>
     </section>
@@ -131,6 +149,7 @@
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"><span class="toast-mark">!</span><span id="toastText"></span></div>
+  <div class="modal-backdrop" id="directoryModal" hidden><section class="directory-modal" role="dialog" aria-modal="true" aria-labelledby="directoryModalTitle"><div class="panel-head"><div><p class="card-label">SERVER DIRECTORY</p><h3 id="directoryModalTitle">选择输出目录</h3></div><button class="icon-button" id="directoryCloseButton" type="button" aria-label="关闭">×</button></div><p class="help-text">这是运行分析的 Linux 服务器目录。双击下方文件夹进入，确认后把当前目录写入输出路径。</p><div class="directory-path-row"><input id="directoryPathInput" class="text-field" placeholder="/data/results"><button class="subtle-button" id="directoryGoButton" type="button">打开</button></div><div class="directory-toolbar"><button class="subtle-button" id="directoryParentButton" type="button">↑ 上一级</button><span id="directoryCurrentLabel"></span></div><div class="directory-list" id="directoryList"></div><div class="editor-actions"><span class="inline-status">不会读取目录里的文件，只显示文件夹</span><button class="button button-dark" id="directoryChooseButton" type="button">使用当前目录</button></div></section></div>
   <footer><span>QIIME2 AUTO</span><span>一键运行 · 本地优先 · <a href="README.html">使用说明</a> · <a href="README.md">CLI 备用入口</a></span></footer>
   <script src="/app.js"></script>
 </body>

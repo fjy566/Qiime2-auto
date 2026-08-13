@@ -9,6 +9,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
+from .table_editor import read_table as _read_editable_table
+from .table_editor import validate_metadata_payload
+
 
 FASTQ_SUFFIXES = (".fastq.gz", ".fq.gz", ".fastq", ".fq")
 _READ_RE = re.compile(r"(?P<sample>.+?)(?:_S\d+)?_L\d+_R(?P<read>[12])_\d+", re.IGNORECASE)
@@ -222,33 +225,15 @@ def generate_metadata_template(sample_ids: Iterable[str], output_path: str | Pat
     with output.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow(["sample-id", *columns])
+        writer.writerow(["#q2:types", *("categorical" for _ in columns)])
         for sample_id in sorted({str(value).strip() for value in sample_ids if str(value).strip()}):
-            writer.writerow([sample_id, *(f"{sample_id}_{column}" for column in columns)])
+            writer.writerow([sample_id, *("" for _ in columns)])
     return str(output.resolve())
 
 
 def _read_table(path: Path) -> tuple[list[str], list[dict[str, str]]]:
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        lines = []
-        for line in handle:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if stripped.lstrip("#").lower().startswith(("sample-id\t", "sampleid\t")):
-                lines.append(line.lstrip("#"))
-            elif not line.lstrip().startswith("#"):
-                lines.append(line)
-    if not lines:
-        return [], []
-    first = lines[0]
-    if first.lstrip().lower().startswith("#sample-id"):
-        lines[0] = first.lstrip()[1:]
-    reader = csv.DictReader(lines, delimiter="\t")
-    headers = [str(value).strip() for value in (reader.fieldnames or [])]
-    headers = ["sample-id" if value.lower().replace("_", "-") in {"sampleid", "sample-id"} else value for value in headers]
-    reader.fieldnames = headers
-    rows = [{str(key).strip(): (value or "").strip() for key, value in row.items() if key is not None} for row in reader]
-    return headers, rows
+    table = _read_editable_table(path)
+    return table["headers"], table["rows"]
 
 
 def validate_metadata_details(metadata_path: str | Path) -> ValidationResult:
@@ -258,29 +243,17 @@ def validate_metadata_details(metadata_path: str | Path) -> ValidationResult:
         result.errors.append("文件不存在")
         return result
     try:
-        headers, rows = _read_table(path)
-    except (OSError, UnicodeError, csv.Error) as exc:
+        table = _read_editable_table(path)
+        headers, rows = table["headers"], table["rows"]
+        payload = validate_metadata_payload(headers, table["types"], rows)
+    except (OSError, UnicodeError, csv.Error, ValueError) as exc:
         result.errors.append(f"无法读取文件: {exc}")
         return result
     result.columns = headers
     result.sample_count = len(rows)
-    if "sample-id" not in headers:
-        result.errors.append("缺少 sample-id 列")
-    if len(headers) != len(set(headers)):
-        result.errors.append("列名重复")
-    if not rows:
-        result.errors.append("没有可用样本行")
-    sample_ids = [row.get("sample-id", "") for row in rows]
-    if any(not value for value in sample_ids):
-        result.errors.append("sample-id 不能为空")
-    duplicates = sorted({value for value in sample_ids if value and sample_ids.count(value) > 1})
-    if duplicates:
-        result.errors.append(f"样本 ID 重复: {', '.join(duplicates)}")
-    if any(not value for row in rows for value in row.values()):
-        result.errors.append("表格包含空值")
-    if len(headers) < 2:
-        result.warnings.append("只有 sample-id，没有分组列；多样性与差异分析可能无法运行")
-    result.valid = not result.errors
+    result.errors.extend(payload.get("errors", []))
+    result.warnings.extend(payload.get("warnings", []))
+    result.valid = bool(payload.get("valid"))
     return result
 
 
