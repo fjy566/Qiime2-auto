@@ -3,67 +3,135 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1114">
-  <title>QIIME2 Auto · 16S 分析工作台</title>
+  <meta name="theme-color" content="#071211">
+  <title>QIIME2 Auto · 一键 16S 分析</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="grain"></div>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="background-orb orb-one" aria-hidden="true"></div>
+  <div class="background-orb orb-two" aria-hidden="true"></div>
+
   <header class="topbar">
-    <a class="brand" href="/" aria-label="QIIME2 Auto 首页"><span class="brand-mark">⟡</span><span>QIIME2 <em>AUTO</em></span></a>
-    <div class="top-meta"><span class="status-dot" id="healthDot"></span><span id="healthText">正在检查本机环境</span><span class="version">v1.0</span></div>
+    <a class="brand" href="/" aria-label="QIIME2 Auto 首页"><span class="brand-mark">◈</span><span>QIIME2 <em>AUTO</em></span></a>
+    <div class="top-meta"><span class="status-dot" id="healthDot"></span><span id="healthText">正在连接本地服务</span><span class="version">ONE-CLICK · v1.1</span></div>
   </header>
 
   <main>
     <section class="hero reveal">
       <div class="hero-copy">
-        <p class="eyebrow">16S rRNA · LOCAL WORKBENCH</p>
-        <h1>把复杂的测序流程，<span>变成看得懂的步骤。</span></h1>
-        <p class="lede">扫描数据、生成模板、校验元数据，然后再决定是否启动 QIIME2。每一步都有反馈，不让你对着终端猜发生了什么。</p>
-        <div class="hero-actions"><a href="#workspace" class="button button-primary">开始检查数据 <span>↘</span></a><a href="README.html" class="text-link">阅读使用说明 ↗</a></div>
+        <p class="eyebrow">16S rRNA · VISUAL PIPELINE</p>
+        <h1>选好数据，<span>一键完成分析。</span></h1>
+        <p class="lede">你不需要记命令。QIIME2 Auto 会帮你整理 FASTQ、读取 manifest、校验 metadata、选择 Conda 环境，再把完整分析交给 QIIME2。</p>
+        <div class="hero-actions"><a href="#workspace" class="button button-primary">开始准备数据 <span>↓</span></a><a href="README.html" class="text-link">阅读使用说明 ↗</a></div>
+        <div class="hero-trust"><span>LOCAL ONLY</span><span>NO COMMAND REQUIRED</span><span>CLI 保留</span></div>
       </div>
-      <div class="hero-orbit" aria-hidden="true"><div class="orbit-ring ring-a"></div><div class="orbit-ring ring-b"></div><div class="orbit-core"><span>16S</span><small>READY<br>TO MAP</small></div><i class="orbit-dot dot-a"></i><i class="orbit-dot dot-b"></i><i class="orbit-dot dot-c"></i></div>
+      <div class="hero-visual" aria-hidden="true">
+        <div class="visual-grid"></div><div class="visual-ring ring-a"></div><div class="visual-ring ring-b"></div>
+        <div class="visual-core"><span>16S</span><small>READY<br>TO RUN</small></div>
+        <div class="signal signal-a"><i></i><span>DATA</span></div><div class="signal signal-b"><i></i><span>QIIME2</span></div><div class="signal signal-c"><i></i><span>REPORT</span></div>
+      </div>
     </section>
 
-    <section class="workspace" id="workspace">
-      <div class="section-heading reveal"><div><p class="eyebrow">01 / WORKSPACE</p><h2>先把输入弄清楚</h2></div><p class="section-note">当前版本不要求你先安装 QIIME2。扫描、模板与校验都可以先做。</p></div>
-      <div class="workspace-grid">
-        <article class="panel input-panel reveal delay-1">
-          <div class="panel-kicker"><span class="number">01</span><span>INPUT PATH</span></div>
-          <label for="inputPath">输入文件或目录</label>
-          <div class="field-with-action"><input id="inputPath" type="text" placeholder="例如：D:\\project\\raw_data 或 /data/run1"><button class="icon-button" id="scanButton" title="扫描输入">↗</button></div>
-          <p class="hint">支持 EMP、Casava、manifest.tsv，以及带 R1/R2 标识的 FASTQ。</p>
-          <div class="scan-result empty" id="scanResult"><span class="scan-icon">⌁</span><span>输入路径后点击右侧箭头开始扫描</span></div>
+    <section class="workflow-strip reveal" aria-label="分析流程">
+      <div class="workflow-line"></div>
+      <div class="workflow-step active" data-step="data"><span class="workflow-number">01</span><div><strong>数据</strong><small>选择并识别</small></div><em class="step-state">进行中</em></div>
+      <div class="workflow-step" data-step="metadata"><span class="workflow-number">02</span><div><strong>Metadata</strong><small>选择或生成</small></div><em class="step-state">待处理</em></div>
+      <div class="workflow-step" data-step="runtime"><span class="workflow-number">03</span><div><strong>环境</strong><small>选择 QIIME2</small></div><em class="step-state">待处理</em></div>
+      <div class="workflow-step" data-step="run"><span class="workflow-number">04</span><div><strong>分析</strong><small>一键运行</small></div><em class="step-state">待处理</em></div>
+    </section>
+
+    <section class="section" id="workspace">
+      <div class="section-heading reveal"><div><p class="eyebrow">01 / DATA PACKAGE</p><h2>先把数据放进来</h2></div><p class="section-note">manifest 和 FASTQ 可以分开选择。无论先后，程序都会把它们放进同一个数据包并自动匹配。</p></div>
+      <div class="data-layout">
+        <article class="surface data-panel reveal delay-1">
+          <div class="panel-head"><div><p class="card-label">INPUT</p><h3>选择数据文件</h3></div><span class="soft-badge">自动识别</span></div>
+          <div class="picker-deck">
+            <label class="picker-tile"><input id="manifestPicker" type="file"><span class="picker-symbol">≋</span><strong>选择 manifest</strong><small>任意后缀都可以，按内容读取</small></label>
+            <label class="picker-tile picker-tile-accent"><input id="fastqPicker" type="file" multiple accept=".fastq,.fq,.fastq.gz,.fq.gz,.gz"><span class="picker-symbol">＋</span><strong>选择多个 FASTQ</strong><small>可一次选择 2、4 或更多序列文件</small></label>
+          </div>
+          <div class="path-label"><span>服务器路径（大文件推荐）</span><span class="path-hint">Linux 路径</span></div>
+          <div class="path-row"><input id="inputPath" type="text" placeholder="例如 /data/project/sample-sheet.weird 或 /data/fastq"><button class="icon-button" id="scanButton" title="检查路径">→</button></div>
+          <div class="selected-files" id="selectedFiles"><span class="file-badge">＋</span><span><strong>还没有加入数据</strong><small>可以先选择 manifest，再选择多个 FASTQ；两次选择会自动合并。</small></span></div>
+          <div class="scan-result empty" id="scanResult"><span class="scan-icon">⌁</span><span><strong>等待数据</strong><small>选择文件后，这里会告诉你识别结果和下一步。</small></span></div>
+          <div class="input-footer"><span class="inline-status" id="inputStatus">还没有扫描</span><div class="small-actions"><button class="subtle-button" id="manifestButton" disabled>由 FASTQ 生成 manifest</button></div></div>
         </article>
-        <article class="panel steps-panel reveal delay-2">
-          <div class="panel-kicker"><span class="number">02</span><span>GUIDED STEPS</span></div>
-          <div class="step-list">
-            <div class="step active" data-step="scan"><span class="step-icon">⌕</span><div><strong>扫描并识别</strong><small>判断是单端、双端还是 manifest</small></div><span class="step-state">进行中</span></div>
-            <div class="step" data-step="manifest"><span class="step-icon">≋</span><div><strong>生成 manifest</strong><small>把 FASTQ 文件整理成标准清单</small></div><button class="mini-button" id="manifestButton" disabled>生成</button></div>
-            <div class="step" data-step="metadata"><span class="step-icon">⊞</span><div><strong>准备 metadata</strong><small>生成分组模板并检查空值/重复</small></div><button class="mini-button" id="metadataButton" disabled>生成</button></div>
-            <div class="step" data-step="run"><span class="step-icon">▶</span><div><strong>预览与执行</strong><small>QIIME2 可用后才会真正运行</small></div><button class="mini-button" id="previewButton" disabled>预览</button></div>
+        <aside class="data-side reveal delay-2">
+          <div class="metric-grid">
+            <article class="metric-card metric-cyan"><span class="metric-icon">◌</span><p>DATA TYPE</p><strong id="dataTypeValue">等待扫描</strong><small id="dataTypeDesc">输入后显示单双端和 manifest 类型。</small></article>
+            <article class="metric-card metric-amber"><span class="metric-icon">▦</span><p>SAMPLES</p><strong id="sampleCountValue">—</strong><small id="sampleCountDesc">识别后显示样本数。</small></article>
+          </div>
+          <div class="side-note"><span class="note-star">✦</span><div><strong>识别逻辑更聪明</strong><p>manifest 文件本身没有 FASTQ 后缀，所以程序会读取其中的 filepath 列，统计真正引用的序列文件。</p></div></div>
+          <div class="quick-flow"><div class="quick-flow-title"><span>WHAT HAPPENS NEXT</span><span>自动</span></div><div><i>01</i><span>读取表头与路径</span></div><div><i>02</i><span>匹配 R1 / R2 序列</span></div><div><i>03</i><span>准备 metadata</span></div></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section section-light" id="metadata-section">
+      <div class="section-heading reveal"><div><p class="eyebrow">02 / METADATA</p><h2>样本分组，也可以直接选择</h2></div><p class="section-note">metadata 决定样本如何分组比较。你可以上传已有文件，也可以让程序按 manifest 生成模板。</p></div>
+      <div class="metadata-layout">
+        <article class="surface metadata-panel reveal delay-1">
+          <div class="panel-head"><div><p class="card-label">SAMPLE INFORMATION</p><h3>选择 metadata 文件</h3></div><span class="required-badge">分析必需</span></div>
+          <label class="file-row"><span class="file-row-icon">⊞</span><span><strong>选择 metadata</strong><small>TSV / TXT 均可，第一列应为 sample-id 或 #SampleID</small></span><input id="metadataPicker" type="file"></label>
+          <div class="path-row light-row"><input id="metadataPath" type="text" placeholder="也可以输入服务器上的 metadata 路径"><span class="path-check">TSV</span></div>
+          <div class="validation-note" id="metadataValidation">还没有选择 metadata</div>
+          <div class="metadata-actions"><button class="button button-dark" id="metadataButton" disabled>根据 manifest 生成模板</button><span id="metadataName">未选择文件</span></div>
+        </article>
+        <aside class="metadata-explain reveal delay-2"><div class="explain-number">02</div><h3>不确定怎么填？</h3><p>第一次使用可以先生成模板。打开生成的文件，把每个样本对应的 group 改成真实分组，再回来选择它。</p><div class="example-table"><div><span>sample-id</span><span>group</span></div><div><span>sample01</span><span>control</span></div><div><span>sample02</span><span>treatment</span></div></div><small>校验会检查重复 ID、空值和分组列。</small></aside>
+      </div>
+    </section>
+
+    <section class="section" id="configuration">
+      <div class="section-heading reveal"><div><p class="eyebrow">03 / SETUP</p><h2>告诉程序怎么分析</h2></div><p class="section-note">只需要填写你真正知道的内容。默认值已经适合第一次运行，页面会解释每个关键选项。</p></div>
+      <div class="setup-grid">
+        <article class="surface setup-card runtime-card reveal delay-1">
+          <div class="panel-head"><div><p class="card-label">RUNTIME</p><h3>选择 QIIME2 环境</h3></div><button class="subtle-button" id="refreshEnvironments">重新检查</button></div>
+          <p class="help-text">程序会自动查询 Conda 环境，并检查每个环境里的 QIIME2 版本。你不用打开终端。</p>
+          <select id="environmentSelect" class="select-field"><option value="">正在检查 Conda 环境…</option></select>
+          <div class="environment-status" id="environmentStatus">正在准备环境检查</div>
+          <div class="runtime-mini"><span class="metric-icon">⌘</span><div><strong id="qiimeValue">检测中</strong><small id="qiimeDesc">正在检查可用的 QIIME2 环境。</small></div></div>
+          <div class="install-helper" id="installHelper" hidden>
+            <div class="helper-title"><span class="warning-mark">!</span><strong>还没有可用的 QIIME2</strong></div>
+            <p>选择一个版本，点击一次即可创建新的 Conda 环境。安装只在 Linux 目标服务器执行。</p>
+            <div class="inline-fields"><label>版本<select id="installVersion"></select></label><label>分发版<select id="installDistribution"></select></label></div>
+            <input id="installEnvironmentName" class="text-field" placeholder="环境名（可留空使用默认名称）">
+            <div class="install-summary" id="installSummary">正在加载安装选项…</div>
+            <div class="helper-actions"><button class="button button-primary" id="installButton">一键安装 QIIME2</button></div>
+            <p class="install-hint" id="installHint">安装过程可能需要几分钟。</p><div class="install-status" id="installStatus"></div>
           </div>
         </article>
+
+        <article class="surface setup-card reference-card reveal delay-2">
+          <div class="panel-head"><div><p class="card-label">REFERENCE</p><h3>分类器</h3></div><span class="soft-badge">物种注释</span></div>
+          <label class="file-row compact-file-row"><span class="file-row-icon">◎</span><span><strong>选择分类器 .qza</strong><small>例如 SILVA / Greengenes 训练好的分类器</small></span><input id="classifierPicker" type="file" accept=".qza"></label>
+          <input id="classifierPath" class="text-field" placeholder="或者填写服务器上的分类器路径">
+          <div class="selection-note" id="classifierName">未选择分类器</div>
+          <div class="divider"></div>
+          <label class="toggle-line"><input id="skipTaxonomy" type="checkbox"><span class="fake-check"></span><span><strong>这次跳过物种分类</strong><small>没有分类器时可以先做去噪和多样性分析</small></span></label>
+        </article>
       </div>
+
+      <article class="surface options-card reveal delay-3">
+        <div class="panel-head"><div><p class="card-label">ANALYSIS OPTIONS</p><h3>分析参数</h3></div><span class="soft-badge">默认值可直接运行</span></div>
+        <div class="option-group sampling-group"><div class="option-copy"><strong>采样深度</strong><p>每个样本保留多少条序列用于公平比较。自动模式会根据实际测序量选择共同深度。</p></div><div class="sampling-control"><div class="segmented"><label><input type="radio" name="samplingMode" value="auto" checked><span>自动推荐</span></label><label><input type="radio" name="samplingMode" value="custom"><span>我来定义</span></label></div><input id="samplingDepth" class="text-field" type="number" min="1" placeholder="例如 10000" disabled><p class="field-help" id="samplingDepthHelp">自动模式会先查看每个样本的有效序列量，再选择尽量保留样本的共同深度；第一次分析推荐使用它。</p></div></div>
+        <div class="parameter-grid"><label>正向引物<input id="primerF" class="text-field" placeholder="可留空，例如 GTGCCAGCMGCCGCGGTAA"><small>只有需要去引物时填写</small></label><label>反向引物<input id="primerR" class="text-field" placeholder="双端数据再填写"><small>paired-end 数据的反向引物</small></label><label>正向截断长度<input id="truncLenF" class="text-field" type="number" value="250" min="1"><small>默认 250 bp</small></label><label>反向截断长度<input id="truncLenR" class="text-field" type="number" value="220" min="1"><small>默认 220 bp</small></label><label>最低质量<input id="minQuality" class="text-field" type="number" value="20" min="0"><small>低于此值的碱基会被过滤</small></label><label>最低特征频率<input id="minFrequency" class="text-field" type="number" value="10" min="0"><small>过滤极低频特征</small></label><label>Phred 偏移<select id="phredOffset" class="select-field"><option value="33">33（常见）</option><option value="64">64</option></select><small>不确定时保留 33</small></label><label>结果保存到<input id="outputPath" class="text-field" value="qiime2_analysis" placeholder="例如 /data/results"><small>服务器上的输出目录</small></label></div>
+        <div class="toggle-grid"><label class="toggle-line"><input id="noTrim" type="checkbox"><span class="fake-check"></span><span><strong>跳过引物去除</strong><small>不使用 cutadapt</small></span></label><label class="toggle-line"><input id="noFilter" type="checkbox"><span class="fake-check"></span><span><strong>跳过质量过滤</strong><small>保留原始质量</small></span></label><label class="toggle-line"><input id="noFigaro" type="checkbox"><span class="fake-check"></span><span><strong>跳过 Figaro</strong><small>使用手动截断值</small></span></label><label class="toggle-line"><input id="skipDiversity" type="checkbox"><span class="fake-check"></span><span><strong>跳过多样性</strong><small>不生成 core metrics</small></span></label><label class="toggle-line"><input id="skipAncom" type="checkbox"><span class="fake-check"></span><span><strong>跳过 ANCOM</strong><small>不做差异分析</small></span></label></div>
+      </article>
     </section>
 
-    <section class="insights">
-      <div class="section-heading reveal"><div><p class="eyebrow">02 / CONTROL ROOM</p><h2>让每个判断都有依据</h2></div><p class="section-note">控制台会把环境缺口和下一步动作说清楚。</p></div>
-      <div class="insight-grid">
-        <article class="insight-card accent-cyan reveal delay-1"><span class="insight-symbol">◌</span><div><p class="card-label">DATA TYPE</p><h3 id="dataTypeValue">等待扫描</h3><p id="dataTypeDesc">输入路径确认后，这里会显示识别结果。</p></div></article>
-        <article class="insight-card accent-amber reveal delay-2"><span class="insight-symbol">▦</span><div><p class="card-label">SAMPLES</p><h3 id="sampleCountValue">—</h3><p id="sampleCountDesc">扫描目录后统计 FASTQ 文件数量。</p></div></article>
-        <article class="insight-card accent-pink reveal delay-3"><span class="insight-symbol">⌁</span><div><p class="card-label">QIIME2 STATUS</p><h3 id="qiimeValue">检查中</h3><p id="qiimeDesc">没有 QIIME2 时仍可以完成前置准备。</p></div></article>
+    <section class="section run-section" id="run-section">
+      <div class="section-heading reveal"><div><p class="eyebrow">04 / RUN</p><h2>准备好了，就按一次</h2></div><p class="section-note">不需要复制命令。任务会在服务器后台运行，页面持续显示状态和结果。</p></div>
+      <div class="run-layout">
+        <article class="surface readiness-card reveal delay-1"><div class="panel-head"><div><p class="card-label">PRE-FLIGHT CHECK</p><h3>启动前检查</h3></div><span id="readyBadge" class="ready-badge warn">NEEDS SETUP</span></div><div class="readiness-list"><div class="readiness-item warn" data-check="data"><span class="check-dot">!</span><div><strong>数据</strong><small class="check-copy">先选择并扫描 manifest / FASTQ</small></div></div><div class="readiness-item warn" data-check="metadata"><span class="check-dot">!</span><div><strong>Metadata</strong><small class="check-copy">请选择或生成 metadata，并完成校验</small></div></div><div class="readiness-item warn" data-check="runtime"><span class="check-dot">!</span><div><strong>QIIME2 环境</strong><small class="check-copy">等待可用的 QIIME2 Conda 环境</small></div></div><div class="readiness-item warn" data-check="classifier"><span class="check-dot">!</span><div><strong>分类器</strong><small class="check-copy">请选择分类器，或勾选跳过物种分类</small></div></div><div class="readiness-item good" data-check="sampling"><span class="check-dot">✓</span><div><strong>采样深度</strong><small class="check-copy">自动计算，适合首次分析</small></div></div></div></article>
+        <article class="surface run-card reveal delay-2"><div class="run-card-glow"></div><div class="run-card-content"><span class="run-orbit">◈</span><p class="card-label">ONE-CLICK ANALYSIS</p><h3>把剩下的交给 QIIME2</h3><p id="runHint">还差一步：按照上面的提示补齐必要信息。</p><button class="button button-primary run-button" id="runButton" disabled><span>开始完整分析</span><b>→</b></button><div id="runStatus" class="run-status">任务还没有启动</div></div></article>
       </div>
-    </section>
-
-    <section class="command-section reveal" id="commandSection">
-      <div class="section-heading"><div><p class="eyebrow">03 / COMMAND PREVIEW</p><h2>最后再按下运行</h2></div><p class="section-note">先看懂命令，再交给 QIIME2；不隐藏关键参数。</p></div>
-      <div class="command-card"><div class="command-head"><span>TERMINAL / PREVIEW</span><button id="copyButton" class="copy-button" disabled>复制命令</button></div><pre id="commandOutput"><code>扫描输入后，这里会出现可以复制到命令行的完整命令。</code></pre><div class="command-footer"><span id="commandHint">建议先完成 manifest 和 metadata 校验。</span><button class="button button-primary" id="runButton" disabled>启动分析 <span>→</span></button></div></div>
+      <div class="run-progress surface"><div class="progress-head"><strong>任务进度</strong><span>后台状态</span></div><div class="run-steps" id="runSteps"><div class="run-step idle"><span>○</span><strong>等待启动</strong><small>完成检查后，点击上方按钮</small></div></div></div>
+      <article class="surface result-card reveal" id="resultCard" hidden><div class="result-icon">✓</div><div><p class="card-label">RESULT READY</p><h3>分析完成</h3><p>结果目录：<code id="resultOutput"></code></p><p>分析报告：<code id="resultReport"></code></p></div></article>
     </section>
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"><span class="toast-mark">!</span><span id="toastText"></span></div>
-  <footer><span>QIIME2 AUTO</span><span>本地优先 · 不上传数据 · CLI 仍然保留</span></footer>
+  <footer><span>QIIME2 AUTO</span><span>一键运行 · 本地优先 · <a href="README.html">使用说明</a> · <a href="README.md">CLI 备用入口</a></span></footer>
   <script src="/app.js"></script>
 </body>
 </html>

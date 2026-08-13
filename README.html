@@ -11,22 +11,23 @@
 <body>
   <header>
     <div><p class="eyebrow">QIIME2 AUTO · LOCAL-FIRST 16S WORKBENCH</p><h1>先看懂，<span>再分析。</span></h1></div>
-    <div><p class="intro">这是一个保留命令行、同时提供本地 Web 控制台的 16S rRNA 分析助手。它不会安装 QIIME2，也不会把你的数据上传到外部服务。</p><div class="top-actions"><a class="button" href="README.md">打开 Markdown 版</a><a class="button" href="/">打开控制台</a></div></div>
+    <div><p class="intro">这是一个保留命令行、同时提供本地 Web 控制台的一键 16S rRNA 分析助手。文件只会暂存在当前服务所在机器，不会上传到外部服务。</p><div class="top-actions"><a class="button" href="README.md">打开 Markdown 版</a><a class="button" href="/">打开控制台</a></div></div>
   </header>
   <main class="layout">
-    <nav class="toc"><p class="eyebrow">INDEX</p><a href="#start">快速开始</a><a href="#cli">命令行</a><a href="#input">输入格式</a><a href="#output">输出结构</a><a href="#env">环境边界</a><a href="#faq">常见问题</a></nav>
+    <nav class="toc"><p class="eyebrow">INDEX</p><a href="#start">快速开始</a><a href="#cli">命令行</a><a href="#input">输入格式</a><a href="#sampling">采样深度</a><a href="#output">输出结构</a><a href="#env">环境边界</a><a href="#faq">常见问题</a></nav>
     <div>
-      <article id="start"><h2>快速开始</h2><p>准备阶段不要求 QIIME2。打开终端运行：</p><pre><code>python qiime2_auto.py --help
+      <article id="start"><h2>快速开始</h2><p>准备阶段不要求 QIIME2。打开终端启动服务，然后在页面里完成一键流程：</p><pre><code>python qiime2_auto.py serve</code></pre><p>打开 <code>http://127.0.0.1:8765</code> 后，按“数据 → metadata → 环境 → 一键分析”操作。页面不会要求你复制命令。</p><p>目标分析环境是 Linux + Conda + QIIME2；没有 QIIME2 时，Linux 页面会显示一键安装助手。</p><pre><code>python qiime2_auto.py --help
 python qiime2_auto.py scan /path/to/raw_data
-python qiime2_auto.py serve</code></pre><p>然后打开 <code>http://127.0.0.1:8765</code>。控制台会按“扫描 → manifest → metadata → 校验 → 命令预览”引导你。默认只监听本机。</p></article>
-      <article id="cli"><h2>命令行接口</h2><h3>生成 manifest</h3><pre><code>python qiime2_auto.py -i raw_data -o prepared --generate-manifest --paired-end</code></pre><p>单端数据将 <code>--paired-end</code> 换成 <code>--single-end</code>。</p><h3>生成 metadata</h3><pre><code>python qiime2_auto.py -i prepared/manifest.tsv -o prepared \
+python qiime2_auto.py serve</code></pre><p>然后打开 <code>http://127.0.0.1:8765</code>。控制台会按“数据 → metadata → 环境 → 一键分析”引导你。默认只监听本机。</p></article>
+      <article id="cli"><h2>命令行接口</h2><h3>生成 manifest</h3><pre><code>python qiime2_auto.py -i raw_data -o prepared --generate-manifest --paired-end</code></pre><p>单端数据将 <code>--paired-end</code> 换成 <code>--single-end</code>。</p><h3>查询 Conda 环境</h3><pre><code>python qiime2_auto.py envs
+python qiime2_auto.py envs --no-probe</code></pre><h3>生成 QIIME2 安装命令</h3><pre><code>python qiime2_auto.py install --version 2024.10 --distribution amplicon</code></pre><h3>生成 metadata</h3><pre><code>python qiime2_auto.py -i prepared/manifest.tsv -o prepared \
   --generate-metadata --metadata-columns group timepoint</code></pre><p>请编辑生成的 TSV，把占位分组改成真实值。<code>sample-id</code> 或 QIIME2 常见的 <code>#SampleID</code> 都支持。</p><h3>执行分析</h3><pre><code>python qiime2_auto.py -i prepared/manifest.tsv -o results \
   --metadata prepared/metadata.tsv \
   --classifier /path/to/classifier.qza \
   --sampling-depth 10000 \
   --primer-f GTGCCAGCMGCCGCGGTAA \
   --primer-r GGACTACHVGGGTWTCTAAT</code></pre><div class="note">真正执行分析时必须在你自己的 QIIME2 环境中运行。使用 <code>--dry-run</code> 可以只打印命令，不调用外部工具。</div></article>
-      <article id="input"><h2>支持的输入格式</h2><table><thead><tr><th>类型</th><th>识别方式</th><th>说明</th></tr></thead><tbody><tr><td>EMP single</td><td>barcodes.fastq.gz + sequences.fastq.gz</td><td>单端 EMP</td></tr><tr><td>EMP paired</td><td>barcodes + forward + reverse</td><td>双端 EMP</td></tr><tr><td>Casava</td><td>SampleA_S1_L001_R1_001.fastq.gz</td><td>双端需同时存在 R1/R2</td></tr><tr><td>manifest</td><td>TSV 含 sample-id 与 filepath 列</td><td>推荐使用绝对路径</td></tr><tr><td>混样 FASTQ</td><td>文件名含 _R1 或普通 FASTQ</td><td>必须传 --barcodes</td></tr></tbody></table><h3>metadata 最小示例</h3><pre><code>sample-id    group
+      <article id="input"><h2>支持的输入格式</h2><table><thead><tr><th>类型</th><th>识别方式</th><th>说明</th></tr></thead><tbody><tr><td>EMP single</td><td>barcodes.fastq.gz + sequences.fastq.gz</td><td>单端 EMP</td></tr><tr><td>EMP paired</td><td>barcodes + forward + reverse</td><td>双端 EMP</td></tr><tr><td>Casava</td><td>SampleA_S1_L001_R1_001.fastq.gz</td><td>双端需同时存在 R1/R2</td></tr><tr><td>manifest</td><td>任意后缀，内容含 sample-id 与 filepath 列</td><td>按内容识别；paired-end 会统计引用的所有 FASTQ</td></tr><tr><td>混样 FASTQ</td><td>文件名含 _R1 或普通 FASTQ</td><td>必须传 --barcodes</td></tr></tbody></table><h3>picker 选择</h3><p>Web 控制台支持一次选择多个 FASTQ，也支持先选择 manifest、再选择序列文件；两次选择会合并到同一个数据包。分类器 <code>.qza</code> 和 metadata 也都有 picker，大文件可以直接填写 Linux 服务器路径。</p><h3 id="sampling">采样深度</h3><p>页面提供“自动推荐”和“我来定义”。自动推荐会根据每个样本的有效序列量选择共同深度，适合第一次分析；自定义模式输入正整数，例如 <code>10000</code>，不要高于大多数样本的测序深度。</p><h3>metadata 最小示例</h3><pre><code>sample-id    group
 sample01     control
 sample02     treatment</code></pre><p>实际 TSV 中不要保留示例前的 <code>+</code> 符号；这里仅用于避免 HTML 排版误读。</p></article>
       <article id="output"><h2>输出结构</h2><pre><code>results/
@@ -42,8 +43,8 @@ sample02     treatment</code></pre><p>实际 TSV 中不要保留示例前的 <co
 ├─ 09_differential_abundance/
 ├─ logs/
 └─ analysis_report.md</code></pre><p>报告只列出实际生成的结果，日志目录会记录外部命令。<code>.qzv</code> 文件可以上传到 <a href="https://view.qiime2.org" target="_blank" rel="noreferrer">QIIME2 View</a> 查看。</p></article>
-      <article id="env"><h2>环境边界</h2><p>Python 3.9+ 足以运行帮助、扫描、manifest、metadata 和 Web 控制台。程序不会在导入模块时强制加载 biom/pandas，也不会在准备阶段检查 QIIME2。</p><p>完整分析需要你自行准备 QIIME2、对应版本的插件、分类器 <code>.qza</code>，以及可选的 Figaro/biom。若缺少 <code>qiime</code>，程序会明确报错，不会伪造成功结果。</p></article>
-      <article id="faq"><h2>常见问题</h2><h3>metadata 校验失败怎么办？</h3><p>检查第一列是否为 <code>sample-id</code>/<code>#SampleID</code>，ID 是否重复，是否有空值，以及是否至少存在一个分组列。</p><h3>为什么 auto 采样深度没有结果？</h3><p>自动计算需要 QIIME2 导出的 feature table 和 biom。没有 biom 时，显式传入例如 <code>--sampling-depth 10000</code>。</p><h3>能否只使用 Web？</h3><p>Web 控制台可以发起任务并提供状态接口，但页面默认把完整命令展示出来，便于你在 QIIME2 环境中复现和排错。CLI 始终保留。</p></article>
+      <article id="env"><h2>环境边界</h2><p>Python 3.9+ 足以运行帮助、扫描、manifest、metadata 和 Web 控制台。真正分析只在 Linux + Conda + QIIME2 中执行。</p><p>控制台会执行 <code>conda env list</code>，逐个检查 <code>qiime --version</code>，让你选择真正可用的环境，并通过 <code>conda run</code> 执行分析。没有可用环境时，Linux 页面提供版本、分发版和环境名选择，并支持一键安装。</p><p>完整分析仍需要对应版本的插件、分类器 <code>.qza</code>，以及可选的 Figaro/biom。Windows 仅用于当前开发和前置准备，不能执行 Linux QIIME2 分析。</p></article>
+      <article id="faq"><h2>常见问题</h2><h3>metadata 校验失败怎么办？</h3><p>检查第一列是否为 <code>sample-id</code>/<code>#SampleID</code>，ID 是否重复，是否有空值，以及是否至少存在一个分组列。</p><h3>为什么 manifest 显示 0 个 FASTQ？</h3><p>新版会读取 manifest 的 filepath 列，不再只看 manifest 文件本身。先选择 manifest、再选择对应 FASTQ 时，两次上传会合并到同一个数据包，并自动把跨机器路径映射到当前服务器文件。</p><h3>为什么 auto 采样深度没有结果？</h3><p>自动计算需要 QIIME2 导出的 feature table 和 biom。没有 biom 时，可以在页面切换到“我来定义”，输入正整数。</p><h3>能否只使用 Web？</h3><p>可以。Linux 服务器准备好环境后，页面会完成环境选择、参数校验、后台任务和进度展示，用户只需点击一次“开始完整分析”。CLI 仍然保留用于自动化和排错。</p></article>
     </div>
   </main>
   <footer><span>QIIME2 AUTO · v1.0.0</span><span>本地优先 · 可复现 · 透明执行</span></footer>

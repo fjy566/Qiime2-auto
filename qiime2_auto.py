@@ -24,6 +24,7 @@ from qiime2auto.io import (
     validate_metadata_details,
 )
 from qiime2auto.pipeline import PipelineOptions, run_analysis
+from qiime2auto.environment import discover_environments, install_command, install_options
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -67,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-diversity", action="store_true", help="跳过多样性分析")
     parser.add_argument("--skip-ancom", action="store_true", help="跳过 ANCOM")
     parser.add_argument("--dry-run", action="store_true", help="只打印将执行的命令，不调用外部工具")
+    parser.add_argument("--qiime-env", help="运行 QIIME2 的 Conda 环境名")
     parser.add_argument("--version", action="version", version=f"QIIME2 Auto {__version__}")
     return parser
 
@@ -149,6 +151,7 @@ def run_legacy_cli(args: argparse.Namespace) -> int:
         primer_r_col=args.primer_r_col, no_trim=args.no_trim, no_filter=args.no_filter,
         no_figaro=args.no_figaro, skip_taxonomy=args.skip_taxonomy,
         skip_diversity=args.skip_diversity, skip_ancom=args.skip_ancom, dry_run=args.dry_run,
+        qiime_env=args.qiime_env,
     )
     result = run_analysis(config, options)
     if result.success:
@@ -178,12 +181,34 @@ def run_serve(argv: list[str]) -> int:
     return 0
 
 
+def run_envs(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="查询 Conda 环境与其中的 QIIME2")
+    parser.add_argument("--no-probe", action="store_true", help="只执行 conda env list，不探测 qiime")
+    args = parser.parse_args(argv)
+    print(json.dumps(discover_environments(probe=not args.no_probe), ensure_ascii=False, indent=2))
+    return 0
+
+
+def run_install(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="生成 QIIME2 Linux Conda 安装命令")
+    parser.add_argument("--version", choices=install_options()["versions"], required=True)
+    parser.add_argument("--distribution", choices=install_options()["distributions"], default="amplicon")
+    parser.add_argument("--name")
+    args = parser.parse_args(argv)
+    print(" ".join(install_command(args.version, args.distribution, args.name)))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     values = list(sys.argv[1:] if argv is None else argv)
     if values and values[0] == "scan":
         return run_scan(values[1:])
     if values and values[0] == "serve":
         return run_serve(values[1:])
+    if values and values[0] == "envs":
+        return run_envs(values[1:])
+    if values and values[0] == "install":
+        return run_install(values[1:])
     return run_legacy_cli(build_parser().parse_args(values))
 
 

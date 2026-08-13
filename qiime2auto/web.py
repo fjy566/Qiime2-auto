@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import cgi
+import os
 import shutil
+import subprocess
 import threading
 import uuid
 from http import HTTPStatus
@@ -12,7 +15,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .config import AnalysisConfig
-from .io import generate_manifest, generate_metadata_template, read_sample_ids, scan_input, validate_metadata_details
+from .environment import discover_environments, install_command, install_options
+from .io import generate_manifest, generate_metadata_template, inspect_manifest, is_fastq, read_sample_ids, reconcile_manifest, scan_input, validate_metadata_details
 from .pipeline import PipelineOptions, run_analysis
 from .runner import command_text
 
@@ -20,6 +24,9 @@ from .runner import command_text
 WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
 JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
+INSTALL_JOBS: dict[str, dict] = {}
+INSTALL_LOCK = threading.Lock()
+UPLOAD_ROOT = WEB_ROOT.parent / ".qiime2auto_uploads"
 
 
 def _json_bytes(value: dict) -> bytes:
@@ -30,7 +37,7 @@ def _preview_command(data: dict) -> str:
     input_path = data.get("input_path", "<input>")
     output_path = data.get("output_dir", "qiime2_analysis")
     parts = ["python", "qiime2_auto.py", "-i", input_path, "-o", output_path, "--metadata", data.get("metadata", "metadata.tsv")]
-    for key in ("barcodes", "primer_f", "primer_r", "classifier", "sampling_depth"):
+    for key in ("barcodes", "primer_f", "primer_r", "primer_metadata", "classifier", "sampling_depth", "phred_offset", "min_quality", "min_frequency", "trim_left_f", "trim_left_r", "trunc_len_f", "trunc_len_r", "max_ee", "trunc_q", "qiime_env"):
         if data.get(key):
             parts.extend([f"--{key.replace('_', '-')}", str(data[key])])
     for key in ("no_trim", "no_filter", "no_figaro", "skip_taxonomy", "skip_diversity", "skip_ancom", "dry_run"):
@@ -61,7 +68,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/api/health":
-            self._send({"ok": True, "version": "1.0.0", "tools": {name: shutil.which(name) is not None for name in ("qiime", "biom", "figaro")}})
+            self._send({"ok": True, "version": "1.0.0", "platform": os.name, "tools": {name: shutil.which(name) is not None for name in ("qiime", "biom", "figaro", "conda")}})
+            return
+        if parsed.path == "/api/environments":
+            self._send({"ok": True, **discover_environments(probe=True)})
+            return
+        if parsed.path == "/api/install-options":
+            self._send({"ok": True, **install_options()})
             return
         if parsed.path == "/api/scan":
             values = parse_qs(parsed.query)
@@ -77,12 +90,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
             else:
                 self._send({"ok": True, "job": job})
             return
+        if parsed.path.startswith("/api/install-jobs/"):
+            job_id = parsed.path.rsplit("/", 1)[-1]
+            with INSTALL_LOCK:
+                job = INSTALL_JOBS.get(job_id)
+            if not job:
+                self._send({"ok": False, "error": "找不到安装任务"}, HTTPStatus.NOT_FOUND)
+            else:
+                self._send({"ok": True, "job": job})
+            return
         self._serve_static(parsed.path)
 
     def do_POST(self) -> None:
         try:
-            data = self._body()
             path = urlparse(self.path).path
+            if path == "/api/upload":
+                self._handle_upload()
+                return
+            data = self._body()
             if path == "/api/manifest":
                 input_path = Path(data["input_path"])
                 output_path = data.get("output_path") or str(input_path / "manifest.tsv")
@@ -104,6 +129,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if path == "/api/preview":
                 self._send({"ok": True, "command": _preview_command(data)})
                 return
+            if path == "/api/install-preview":
+                command = install_command(data.get("version", ""), data.get("distribution", "amplicon"), data.get("environment_name"))
+                self._send({"ok": True, "command": command, "command_text": " ".join(command)})
+                return
+            if path == "/api/install":
+                self._start_install(data)
+                return
             if path == "/api/run":
                 self._start_job(data)
                 return
@@ -113,11 +145,99 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # pragma: no cover - 兜底，避免浏览器收到空白响应
             self._send({"ok": False, "error": f"服务器错误: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
+    def _handle_upload(self) -> None:
+        content_type = self.headers.get("Content-Type", "")
+        if not content_type.startswith("multipart/form-data"):
+            raise ValueError("文件上传必须使用 multipart/form-data")
+        form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": content_type})
+        items = form["files"] if "files" in form else []
+        if not isinstance(items, list):
+            items = [items]
+        items = [item for item in items if getattr(item, "filename", None)]
+        if not items:
+            raise ValueError("没有选择文件")
+        session_id = form.getfirst("session_id", "").strip()
+        if session_id and (len(session_id) != 32 or any(character not in "0123456789abcdef" for character in session_id.lower())):
+            raise ValueError("上传会话无效，请重新选择文件")
+        session_id = session_id or uuid.uuid4().hex
+        session_dir = UPLOAD_ROOT / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        saved = []
+        for item in items:
+            filename = Path(item.filename).name
+            if not filename:
+                continue
+            destination = session_dir / filename
+            with destination.open("wb") as output:
+                shutil.copyfileobj(item.file, output)
+            saved.append(str(destination.resolve()))
+        if not saved:
+            raise ValueError("没有可保存的文件")
+        selected_kind = form.getfirst("kind", "data")
+        manifest_candidates = []
+        for candidate in sorted(session_dir.iterdir()):
+            if candidate.is_file() and not is_fastq(candidate):
+                details = inspect_manifest(candidate, session_dir)
+                if details.get("data_type"):
+                    manifest_candidates.append(candidate)
+        manifest_source = manifest_candidates[-1] if manifest_candidates else None
+        normalized_manifest = reconcile_manifest(manifest_source, session_dir) if manifest_source and selected_kind in {"fastq", "manifest"} else None
+        if selected_kind in {"classifier", "metadata"}:
+            target = saved[0]
+        elif normalized_manifest and Path(normalized_manifest).is_file() and Path(normalized_manifest).name.startswith(".qiime2auto"):
+            target = normalized_manifest
+        elif manifest_source:
+            target = str(manifest_source.resolve())
+        elif selected_kind == "fastq":
+            target = str(session_dir.resolve())
+        else:
+            target = saved[0] if len(saved) == 1 else str(session_dir.resolve())
+        scan = scan_input(target, session_dir)
+        self._send({"ok": True, "kind": selected_kind, "session_id": session_id, "path": target, "files": saved, "scan": scan})
+
+    def _start_install(self, data: dict) -> None:
+        if os.name != "posix":
+            raise ValueError("QIIME2 一键安装只支持 Linux；请在 Linux + Conda 服务器上打开本项目。")
+        details = discover_environments(probe=False)
+        if not details.get("conda_available"):
+            raise ValueError(details.get("error") or "未找到 conda")
+        command = install_command(data.get("version", ""), data.get("distribution", "amplicon"), data.get("environment_name"))
+        job_id = uuid.uuid4().hex[:12]
+        with INSTALL_LOCK:
+            INSTALL_JOBS[job_id] = {"id": job_id, "status": "running", "command": command, "output": "正在创建 Conda 环境…"}
+
+        def worker() -> None:
+            try:
+                process = subprocess.run(command, check=False, capture_output=True, text=True)
+                output = "\n".join(value for value in (process.stdout, process.stderr) if value).strip()
+                with INSTALL_LOCK:
+                    INSTALL_JOBS[job_id].update({"status": "completed" if process.returncode == 0 else "failed", "returncode": process.returncode, "output": output[-5000:]})
+            except Exception as exc:
+                with INSTALL_LOCK:
+                    INSTALL_JOBS[job_id].update({"status": "failed", "output": str(exc)})
+
+        threading.Thread(target=worker, name=f"qiime2auto-install-{job_id}", daemon=True).start()
+        self._send({"ok": True, "job_id": job_id}, HTTPStatus.ACCEPTED)
+
     def _start_job(self, data: dict) -> None:
         required = ["input_path", "output_dir", "data_type", "metadata"]
         missing = [key for key in required if not data.get(key)]
         if missing:
             raise ValueError(f"缺少参数: {', '.join(missing)}")
+        if os.name != "posix":
+            raise ValueError("一键分析只支持 Linux；请在安装了 Conda + QIIME2 的 Linux 服务器上打开页面。")
+        if not data.get("qiime_env"):
+            raise ValueError("请先选择一个包含 QIIME2 的 Conda 环境。")
+        input_path = Path(str(data["input_path"])).expanduser()
+        metadata_path = Path(str(data["metadata"])).expanduser()
+        if not input_path.exists():
+            raise ValueError(f"输入文件或目录不存在: {input_path}")
+        if not metadata_path.is_file():
+            raise ValueError(f"metadata 文件不存在: {metadata_path}")
+        if not data.get("skip_taxonomy"):
+            classifier_path = Path(str(data.get("classifier", ""))).expanduser()
+            if not classifier_path.is_file():
+                raise ValueError("物种分类已开启，但分类器文件不存在；请重新选择 .qza，或勾选跳过物种分类。")
         job_id = uuid.uuid4().hex[:12]
         with JOBS_LOCK:
             JOBS[job_id] = {"id": job_id, "status": "running", "message": "任务已启动", "result": None}
@@ -132,6 +252,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     no_filter=bool(data.get("no_filter")), no_figaro=bool(data.get("no_figaro")),
                     skip_taxonomy=bool(data.get("skip_taxonomy")), skip_diversity=bool(data.get("skip_diversity")),
                     skip_ancom=bool(data.get("skip_ancom")), dry_run=bool(data.get("dry_run")),
+                    qiime_env=data.get("qiime_env"),
                 )
                 result = run_analysis(config, options)
                 with JOBS_LOCK:

@@ -20,6 +20,11 @@ class RunnerTests(unittest.TestCase):
             result = runner.run(["definitely-not-installed-q2-tool", "--version"])
             self.assertEqual(result.returncode, 0)
 
+    def test_selected_conda_environment_prefixes_qiime(self):
+        runner = CommandRunner(dry_run=True, command_prefix=["conda", "run", "-n", "qiime2-test"])
+        result = runner.run(["qiime", "--version"])
+        self.assertEqual(result.args[:4], ["conda", "run", "-n", "qiime2-test"])
+
     def test_invalid_sampling_depth_is_rejected(self):
         with self.assertRaises(ConfigError):
             AnalysisConfig(sampling_depth="not-a-number").validate()

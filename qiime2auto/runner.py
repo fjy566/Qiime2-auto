@@ -26,9 +26,10 @@ def _quote(value: str) -> str:
 
 
 class CommandRunner:
-    def __init__(self, output_dir: str | Path | None = None, dry_run: bool = False):
+    def __init__(self, output_dir: str | Path | None = None, dry_run: bool = False, command_prefix: Iterable[str] | None = None):
         self.output_dir = Path(output_dir) if output_dir else None
         self.dry_run = dry_run
+        self.command_prefix = [str(value) for value in (command_prefix or [])]
         if self.output_dir:
             (self.output_dir / "logs").mkdir(parents=True, exist_ok=True)
 
@@ -45,6 +46,8 @@ class CommandRunner:
 
     def run(self, command: Iterable[str], log_name: str | None = None) -> subprocess.CompletedProcess:
         values = [str(value) for value in command]
+        if self.command_prefix and values and values[0] == "qiime":
+            values = [*self.command_prefix, *values]
         print(f"\n$ {command_text(values)}")
         if self.dry_run:
             return subprocess.CompletedProcess(values, 0, "[dry-run]\n", "")

@@ -35,6 +35,7 @@ class PipelineOptions:
     skip_diversity: bool = False
     skip_ancom: bool = False
     dry_run: bool = False
+    qiime_env: str | None = None
 
     @property
     def paired_end(self) -> bool:
@@ -65,7 +66,10 @@ class PipelineService:
         self.config = config
         self.options = options
         self.output_dir = Path(create_output_structure(options.output_dir))
-        self.runner = CommandRunner(self.output_dir, dry_run=options.dry_run)
+        command_prefix = []
+        if options.qiime_env:
+            command_prefix = ["conda", "run", "--no-capture-output", "-n", options.qiime_env]
+        self.runner = CommandRunner(self.output_dir, dry_run=options.dry_run, command_prefix=command_prefix)
         self.steps: list[dict[str, Any]] = []
 
     def _step(self, name: str, action):
@@ -79,7 +83,7 @@ class PipelineService:
 
     def run(self) -> PipelineResult:
         try:
-            self.runner.require(["qiime"])
+            self.runner.require(["conda" if self.options.qiime_env else "qiime"])
             demux_file = self._step("导入数据", self._import_data)
             if not demux_file:
                 raise RuntimeError("数据导入未产生输出文件")

@@ -6,6 +6,7 @@ from qiime2auto.io import (
     detect_data_type,
     generate_manifest,
     generate_metadata_template,
+    inspect_manifest,
     scan_input,
     validate_metadata_details,
 )
@@ -59,6 +60,33 @@ class InputWorkflowTests(unittest.TestCase):
             self.assertTrue(Path(metadata).exists())
             self.assertEqual(detect_data_type(source), "manifest_single")
             self.assertEqual(scan_input(source)["data_type"], "manifest_single")
+
+    def test_manifest_detection_ignores_file_extension(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "sample-sheet.weird"
+            path.write_text("sample-id\tabsolute-filepath\nS1\t/data/S1.fastq.gz\n", encoding="utf-8")
+            self.assertEqual(detect_data_type(path), "manifest_single")
+
+    def test_manifest_scan_counts_referenced_fastq_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "samples.anything"
+            manifest.write_text(
+                "sample-id\tforward-absolute-filepath\treverse-absolute-filepath\n"
+                "S1\tS1_R1.fastq.gz\tS1_R2.fastq.gz\n"
+                "S2\tS2_R1.fastq.gz\tS2_R2.fastq.gz\n",
+                encoding="utf-8",
+            )
+            for name in ("S1_R1.fastq.gz", "S1_R2.fastq.gz", "S2_R1.fastq.gz", "S2_R2.fastq.gz"):
+                (root / name).write_bytes(b"@read\nACGT\n+\nIIII\n")
+            details = inspect_manifest(manifest, root)
+            self.assertEqual(details["fastq_count"], 4)
+            self.assertEqual(details["missing_files"], [])
+            scan = scan_input(manifest, root)
+            self.assertEqual(scan["data_type"], "manifest_paired")
+            self.assertEqual(scan["fastq_count"], 4)
+            self.assertEqual(scan["existing_fastq_count"], 4)
+            self.assertEqual(scan["sample_count"], 2)
 
 
 if __name__ == "__main__":
