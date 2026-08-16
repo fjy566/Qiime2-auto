@@ -24,6 +24,10 @@
 }
 
 * { box-sizing: border-box; }
+select { color-scheme: light; }
+select option { color: #0b1715; background: #f4f0e6; }
+select option:checked { color: #071211; background: #98eee0; }
+select:disabled { color: #73827e; background: #dddace; }
 html { scroll-behavior: smooth; }
 body { margin: 0; overflow-x: hidden; color: var(--paper); background: var(--night); font: 15px/1.55 var(--body); }
 body::before { content: ''; position: fixed; z-index: -4; inset: 0; pointer-events: none; background: linear-gradient(rgba(152,238,224,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(152,238,224,.025) 1px, transparent 1px); background-size: 42px 42px; mask-image: linear-gradient(to bottom, #000, transparent 78%); }
@@ -188,6 +192,33 @@ article[hidden], .modal-backdrop[hidden] { display: none !important; }
 
 @media (max-width: 930px) { .metadata-workspace { grid-template-columns: 1fr; }.manifest-setup { grid-template-columns: 1fr; }.manifest-guide { grid-column: auto; } }
 @media (max-width: 680px) { .sample-tools { flex-wrap: wrap; }.sample-tools .text-field { flex-basis: 100%; }.sample-picker, .column-templates { grid-template-columns: 1fr; }.custom-column-form { grid-template-columns: 1fr; }.manifest-guide { align-items: flex-start; flex-direction: column; }.manifest-guide span::after { display: none; } }
+
+/* Unified server path picker and sample source */
+.path-input-group { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.path-input-group input { min-width: 0; }
+.path-picker-button { flex: 0 0 auto; padding: 7px 9px; white-space: nowrap; cursor: pointer; color: var(--ink); background: rgba(255,255,255,.34); border: 1px solid var(--line-dark); font: 10px var(--body); }
+.path-picker-button:hover:not(:disabled) { background: var(--teal); border-color: var(--teal-deep); }
+.manifest-setup .path-picker-button { color: var(--paper); background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.18); }
+.manifest-setup .path-picker-button:hover { color: var(--ink); background: var(--teal); }
+.directory-entry small { margin-left: auto; color: var(--muted-dark); font: 9px var(--mono); }
+.directory-entry.file-entry { border-left: 2px solid transparent; }
+.directory-entry.file-entry:hover { background: #dff6ee; border-left-color: var(--teal-deep); }
+.table-path-control { display: flex; align-items: center; gap: 5px; }
+.table-path-control .table-control { min-width: 250px; }
+.table-path-picker { flex: 0 0 auto; padding: 6px 7px; cursor: pointer; color: var(--ink); background: var(--paper-2); border: 1px solid var(--line-dark); font: 9px var(--body); }
+.table-path-picker:hover { background: var(--teal); border-color: var(--teal-deep); }
+.metadata-sample-source { margin: 20px 0 0; padding: 18px; background: linear-gradient(105deg, #eef3df, #dff3ed); border: 1px solid rgba(59,191,174,.28); }
+.metadata-sample-source .workbench-heading { margin-bottom: 12px; }
+.source-save-path { display: block; margin-bottom: 12px; color: var(--muted-dark); font: 10px var(--mono); }.source-save-path > span { display: block; margin-bottom: 5px; }.source-save-path .text-field { padding: 8px 0; border-bottom-color: rgba(11,23,21,.3); }
+.source-sample-list { display: flex; flex-wrap: wrap; gap: 7px; max-height: 160px; overflow: auto; }
+.source-sample-chip { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; cursor: pointer; color: var(--muted-dark); background: rgba(255,255,255,.65); border: 1px solid var(--line-dark); }
+.source-sample-chip input { position: absolute; opacity: 0; }
+.source-sample-chip > span { display: grid; width: 17px; height: 17px; place-items: center; color: transparent; background: var(--paper-3); border-radius: 50%; font-size: 8px; }
+.source-sample-chip input:checked + span { color: var(--ink); background: var(--teal); }
+.source-sample-chip:has(input:checked) { color: var(--ink); border-color: var(--teal-deep); }
+.source-sample-chip strong { font: 10px var(--mono); }
+.source-sample-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+@media (max-width: 680px) { .path-input-group { align-items: stretch; flex-direction: column; }.path-input-group .path-picker-button { width: 100%; }.path-row > .path-picker-button { width: auto; }.table-path-control { min-width: 320px; } }
 
 /* Dependency states make the workflow explain itself instead of leaving controls looking active. */
 .dependency-disabled { opacity: .48; filter: saturate(.55); }

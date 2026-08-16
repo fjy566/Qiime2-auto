@@ -51,7 +51,7 @@
             <label class="picker-tile picker-tile-accent"><input id="fastqPicker" type="file" multiple accept=".fastq,.fq,.fastq.gz,.fq.gz,.gz"><span class="picker-symbol">＋</span><strong>选择多个 FASTQ</strong><small>可一次选择 2、4 或更多序列文件</small></label>
           </div>
           <div class="path-label"><span>服务器路径（大文件推荐）</span><span class="path-hint">Linux 路径</span></div>
-          <div class="path-row"><input id="inputPath" type="text" placeholder="例如 /data/project/sample-sheet.weird 或 /data/fastq"><button class="icon-button" id="scanButton" title="检查路径">→</button></div>
+          <div class="path-row"><input id="inputPath" type="text" placeholder="例如 /data/project/sample-sheet.weird 或 /data/fastq"><button class="path-picker-button" id="inputPathPickerButton" type="button">选择</button><button class="icon-button" id="scanButton" title="检查路径">→</button></div>
           <div class="selected-files" id="selectedFiles"><span class="file-badge">＋</span><span><strong>还没有加入数据</strong><small>可以先选择 manifest，再选择多个 FASTQ；两次选择会自动合并。</small></span></div>
           <div class="scan-result empty" id="scanResult"><span class="scan-icon">⌁</span><span><strong>等待数据</strong><small>选择文件后，这里会告诉你识别结果和下一步。</small></span></div>
           <div class="input-footer"><span class="inline-status" id="inputStatus">还没有扫描</span><div class="small-actions"><button class="subtle-button" id="manifestCreateButton">＋ 从零新建 manifest</button><button class="subtle-button" id="manifestButton" disabled>由 FASTQ 自动生成</button></div></div>
@@ -70,7 +70,7 @@
         <p class="help-text">你可以从零建立，也可以修改已打开的 manifest。双端样本需要 R1 和 R2 两条绝对路径；单端样本只需要一条。保存成功后，这个文件会立即成为本次分析输入。</p>
         <div class="manifest-setup">
           <label><span>测序类型</span><select id="manifestTypeSelect" class="select-field"><option value="manifest_paired">双端 paired-end（R1 + R2）</option><option value="manifest_single">单端 single-end</option></select></label>
-          <label><span>保存到服务器</span><input id="manifestSavePath" class="text-field" value="prepared/manifest.tsv" placeholder="例如 /data/project/manifest.tsv"></label>
+          <label><span>保存到服务器</span><div class="path-input-group"><input id="manifestSavePath" class="text-field" value="prepared/manifest.tsv" placeholder="例如 /data/project/manifest.tsv"><button class="path-picker-button" id="manifestSavePathPickerButton" type="button">选择目录</button></div></label>
           <div class="manifest-guide"><b>01</b><span>填写样本与 FASTQ 路径</span><b>02</b><span>检查状态</span><b>03</b><span>保存并使用</span></div>
         </div>
         <div class="editor-summary" id="manifestEditorSummary">选择 manifest 后显示表格。</div>
@@ -80,21 +80,27 @@
     </section>
 
     <section class="section section-light" id="metadata-section">
-      <div class="section-heading reveal"><div><p class="eyebrow">02 / METADATA</p><h2>样本分组，也可以直接选择</h2></div><p class="section-note">metadata 决定样本如何分组比较。你可以上传已有文件，也可以让程序按 manifest 生成模板。</p></div>
+      <div class="section-heading reveal"><div><p class="eyebrow">02 / METADATA</p><h2>样本分组，也可以直接选择</h2></div><p class="section-note">metadata 决定样本如何分组比较。你可以上传已有文件，也可以从 manifest 或已导入的 FASTQ 中选择样本后建立。</p></div>
       <div class="metadata-layout">
         <article class="surface metadata-panel reveal delay-1">
           <div class="panel-head"><div><p class="card-label">SAMPLE INFORMATION</p><h3>选择 metadata 文件</h3></div><span class="soft-badge">按功能需要</span></div>
           <label class="file-row"><span class="file-row-icon">⊞</span><span><strong>选择 metadata</strong><small>TSV / TXT 均可，第一列应为 sample-id 或 #SampleID</small></span><input id="metadataPicker" type="file"></label>
-          <div class="path-row light-row"><input id="metadataPath" type="text" placeholder="也可以输入服务器上的 metadata 路径"><span class="path-check">TSV</span></div>
+          <div class="path-row light-row"><input id="metadataPath" type="text" placeholder="也可以输入服务器上的 metadata 路径"><button class="path-picker-button" id="metadataPathPickerButton" type="button">选择文件</button></div>
           <div class="validation-note" id="metadataValidation">还没有选择 metadata</div>
           <div class="capability-note info" id="metadataCapability"><strong>可以先不提供</strong><span>没有 metadata 时仍可做数据导入、DADA2 和基础物种分类；多样性与差异分析会自动跳过。</span></div>
-          <div class="metadata-actions"><button class="button button-dark" id="metadataButton" disabled>根据 manifest 生成模板</button><span id="metadataName">未选择文件</span></div>
+          <div class="metadata-actions"><button class="button button-dark" id="metadataButton" disabled>从当前数据选择样本</button><span id="metadataName">未选择文件</span></div>
         </article>
         <aside class="metadata-explain reveal delay-2"><div class="explain-number">02</div><h3>不确定怎么填？</h3><p>第一次使用先生成模板。页面会列出全部样本：建立 control、treatment 等组，勾选对应样本即可，不需要离开浏览器。</p><div class="example-table"><div><span>sample-id</span><span>group</span></div><div><span>sample01</span><span>control</span></div><div><span>sample02</span><span>treatment</span></div></div><small>校验会检查重复 ID、空值和字段类型。</small></aside>
       </div>
       <article class="surface editor-card metadata-editor-card reveal" id="metadataEditorCard" hidden>
         <div class="panel-head"><div><p class="card-label">METADATA STUDIO</p><h3>用样本建立实验设计</h3></div><span class="soft-badge" id="metadataEditorBadge">等待 metadata</span></div>
         <p class="help-text">先在左侧创建组并勾选属于这个组的样本；再按研究需要添加字段。QIIME 2 不强制固定列，下面只是常见、实用的模板。</p>
+        <section class="metadata-sample-source">
+          <div class="workbench-heading"><span class="workbench-number">00</span><div><strong>选择参与分析的样本</strong><small id="metadataSourceHint">从 manifest 或已导入 FASTQ 自动读取，也可以自定义添加</small></div></div>
+          <label class="source-save-path"><span>metadata 保存到服务器</span><div class="path-input-group"><input id="metadataSavePath" class="text-field" placeholder="例如 /data/project/metadata.tsv"><button class="path-picker-button" id="metadataSavePathPickerButton" type="button">选择目录</button></div></label>
+          <div class="source-sample-list" id="metadataSourceSamples"></div>
+          <div class="source-sample-actions"><button class="subtle-button" id="applyInputSamplesButton" type="button">应用样本选择</button><button class="subtle-button" id="metadataAddRowButton" type="button">＋ 自定义样本</button></div>
+        </section>
         <div class="metadata-workspace">
           <section class="group-builder">
             <div class="workbench-heading"><span class="workbench-number">01</span><div><strong>建立分组</strong><small>输入组名，再选择属于它的样本</small></div></div>
@@ -143,7 +149,7 @@
           <div class="panel-head"><div><p class="card-label">REFERENCE</p><h3>分类器</h3></div><span class="soft-badge">物种注释</span></div>
           <div id="classifierControls">
             <label class="file-row compact-file-row"><span class="file-row-icon">◎</span><span><strong>选择分类器 .qza</strong><small>例如 SILVA / Greengenes 训练好的分类器</small></span><input id="classifierPicker" type="file" accept=".qza"></label>
-            <input id="classifierPath" class="text-field" placeholder="或者填写服务器上的分类器路径">
+            <div class="path-input-group"><input id="classifierPath" class="text-field" placeholder="或者填写服务器上的分类器路径"><button class="path-picker-button" id="classifierPathPickerButton" type="button">选择文件</button></div>
             <div class="selection-note" id="classifierName">未选择分类器</div>
             <div class="classifier-catalog" id="classifierCatalog"><div class="catalog-loading">正在读取官方分类器…</div></div>
             <p class="reference-note" id="classifierSourceNote">官方分类器会下载到项目文件夹 classifiers/；下载完成后会自动成为默认选择。</p>
@@ -175,7 +181,7 @@
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"><span class="toast-mark">!</span><span id="toastText"></span></div>
-  <div class="modal-backdrop" id="directoryModal" hidden><section class="directory-modal" role="dialog" aria-modal="true" aria-labelledby="directoryModalTitle"><div class="panel-head"><div><p class="card-label">SERVER DIRECTORY</p><h3 id="directoryModalTitle">选择输出目录</h3></div><button class="icon-button" id="directoryCloseButton" type="button" aria-label="关闭">×</button></div><p class="help-text">这是运行分析的 Linux 服务器目录。双击下方文件夹进入，确认后把当前目录写入输出路径。</p><div class="directory-path-row"><input id="directoryPathInput" class="text-field" placeholder="/data/results"><button class="subtle-button" id="directoryGoButton" type="button">打开</button></div><div class="directory-toolbar"><button class="subtle-button" id="directoryParentButton" type="button">↑ 上一级</button><span id="directoryCurrentLabel"></span></div><div class="directory-list" id="directoryList"></div><div class="editor-actions"><span class="inline-status">不会读取目录里的文件，只显示文件夹</span><button class="button button-dark" id="directoryChooseButton" type="button">使用当前目录</button></div></section></div>
+  <div class="modal-backdrop" id="directoryModal" hidden><section class="directory-modal" role="dialog" aria-modal="true" aria-labelledby="directoryModalTitle"><div class="panel-head"><div><p class="card-label">SERVER PATH PICKER</p><h3 id="directoryModalTitle">选择服务器路径</h3></div><button class="icon-button" id="directoryCloseButton" type="button" aria-label="关闭">×</button></div><p class="help-text" id="directoryModalHelp">浏览当前服务所在机器的目录和文件。</p><div class="directory-path-row"><input id="directoryPathInput" class="text-field" placeholder="/data"><button class="subtle-button" id="directoryGoButton" type="button">打开</button></div><div class="directory-toolbar"><button class="subtle-button" id="directoryParentButton" type="button">↑ 上一级</button><span id="directoryCurrentLabel"></span></div><div class="directory-list" id="directoryList"></div><div class="editor-actions"><span class="inline-status" id="directoryPickerHint">只会选择路径，不会修改文件。</span><button class="button button-dark" id="directoryChooseButton" type="button">使用当前目录</button></div></section></div>
   <footer><span>QIIME2 AUTO</span><span>一键运行 · 本地优先 · <a href="README.html">使用说明</a> · <a href="README.md">CLI 备用入口</a></span></footer>
   <script src="/app.js"></script>
 </body>

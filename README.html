@@ -564,7 +564,7 @@ python qiime2_auto.py serve</code></pre>
         <h3>manifest 编辑器</h3>
         <p>可以从零建立单端或双端 manifest，也可以打开已有文件后修改 sample ID、R1 / R2 路径并增删样本。保存时会检查空路径、重复样本和 FASTQ 是否存在，保存成功后会立即把这个文件设为本次分析输入。</p>
         <h3>metadata 分组器</h3>
-        <p>metadata 编辑器默认提供一个 group 分类列。输入 control、treatment 等组名，勾选属于该组的样本，再点击一次即可创建并分配；删除组只会清空对应单元格，不会删除样本。</p>
+        <p>选择 manifest 或导入命名规范的 FASTQ 后，metadata 编辑器会列出识别到的样本，允许勾选本次参与分析的样本，同时保留自定义添加。随后输入 control、treatment 等组名，勾选对应样本即可批量分配。</p>
         <p>常用字段库提供受试者、时间点、采样部位、处理方式、批次、重复编号、年龄、pH 和温度等快捷模板，也可以添加自定义列，并在表头选择 categorical 或 numeric 类型。这些模板不是 QIIME2 强制字段，应按你的研究设计选用。保存后的文件遵循 QIIME2 TSV metadata 形式：</p>
         <pre><code>sample-id  group       age
 #q2:types  categorical numeric
@@ -579,11 +579,11 @@ sample02   treatment   8</code></pre>
         <h2>环境、分类器、Figaro 和输出目录</h2>
         <h3>Conda / QIIME2 环境</h3>
         <p>控制台会查询服务器上的 Conda 环境，并逐个检查 qiime 版本，让你选择真正可用的环境。分析执行时会直接使用所选环境，不要求你手动激活环境。</p>
-        <p>如果没有可用的 QIIME2 环境，Linux 页面会显示版本和分发版选择，并提供一键安装入口；不会覆盖已有环境。开发机没有 QIIME2 不影响前端开发和无依赖测试。</p>
+        <p>如果没有可用的 QIIME2 环境，Linux 页面会显示版本和分发版选择，并提供一键安装入口；默认包含官网最新正式版 2026.7，并使用 <a href="https://library.qiime2.org/quickstart/qiime2" target="_blank" rel="noreferrer">QIIME2 Library 官方环境文件</a>，不会覆盖已有环境。</p>
         <h3>官方分类器</h3>
         <p>分类器卡片提供在线官方资源。默认推荐 <a href="https://data.qiime2.org/classifiers/sklearn-1.4.2/silva/silva-138-99-nb-classifier.qza" target="_blank" rel="noreferrer">SILVA 138 99% 全长分类器</a>，点击下载后会保存到项目的 classifiers 文件夹，并自动作为默认分类器。另有官方 Greengenes 515F / 806R 区域分类器；也可以用 picker 选择本地 .qza。</p>
         <h3>Figaro 与输出目录</h3>
-        <p>选中 QIIME2 环境后，页面会检查 Figaro 是否安装。缺少 Figaro 时，在对应卡片点击一键安装；如果暂时不需要自动截断建议，也可以选择跳过。输出目录使用服务器目录 picker 选择，程序会自动创建结果子目录。</p>
+        <p>选中 QIIME2 环境后，页面会检查 Figaro 是否安装。数据、metadata、分类器、manifest 内 FASTQ 路径、保存位置和输出目录都提供统一的服务器 picker；程序不会要求手工复制路径。</p>
       </article>
 
       <article id="sampling">

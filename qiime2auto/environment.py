@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-SUPPORTED_INSTALL_VERSIONS = ("2024.10", "2025.4", "2025.7")
+SUPPORTED_INSTALL_VERSIONS = ("2026.7", "2025.7", "2025.4", "2024.10")
 SUPPORTED_DISTRIBUTIONS = ("amplicon", "tiny")
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
@@ -124,12 +124,16 @@ def install_command(version: str, distribution: str = "amplicon", environment_na
         raise ValueError(f"不支持的 QIIME2 版本: {version}")
     if distribution not in SUPPORTED_DISTRIBUTIONS:
         raise ValueError(f"不支持的 QIIME2 分发版: {distribution}")
-    name = environment_name or f"qiime2-{distribution}-{version}"
+    if version == "2026.7":
+        release_distribution = "qiime2" if distribution == "amplicon" else "tiny"
+        release_name = "rachis-qiime2" if distribution == "amplicon" else "rachis-tiny"
+        name = environment_name or f"{release_name}-{version}"
+        url = f"https://raw.githubusercontent.com/qiime2/distributions/refs/heads/dev/{version}/{release_distribution}/released/{release_name}-linux-64-conda.yml"
+    else:
+        name = environment_name or f"qiime2-{distribution}-{version}"
+        url = f"https://data.qiime2.org/distro/{distribution}/qiime2-{distribution}-{version}-py310-linux-conda.yml"
     if not _SAFE_NAME.fullmatch(name):
         raise ValueError("Conda 环境名只能包含字母、数字、点、下划线和短横线")
-    # 2024.10 的 URL 来自 QIIME2 官方安装文档；后续发行版沿用官方 distro
-    # 文件命名规则，用户仍可在执行前复制并检查命令。
-    url = f"https://data.qiime2.org/distro/{distribution}/qiime2-{distribution}-{version}-py310-linux-conda.yml"
     return ["conda", "env", "create", "-n", name, "--file", url]
 
 
@@ -142,4 +146,4 @@ def figaro_install_command(environment_name: str) -> list[str]:
 
 
 def install_options() -> dict:
-    return {"versions": list(SUPPORTED_INSTALL_VERSIONS), "distributions": list(SUPPORTED_DISTRIBUTIONS), "platform": "linux", "docs_url": "https://amplicon-docs.qiime2.org/en/stable/how-to-guides/install/"}
+    return {"versions": list(SUPPORTED_INSTALL_VERSIONS), "distributions": list(SUPPORTED_DISTRIBUTIONS), "platform": "linux", "latest": "2026.7", "docs_url": "https://library.qiime2.org/quickstart/qiime2"}

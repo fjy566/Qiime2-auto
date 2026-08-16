@@ -18,6 +18,13 @@ class EnvironmentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             install_command("2024.10", "amplicon", "bad name;rm")
 
+    def test_latest_install_command_matches_official_2026_layout(self):
+        command = install_command("2026.7", "amplicon")
+        self.assertEqual(command[:5], ["conda", "env", "create", "-n", "rachis-qiime2-2026.7"])
+        self.assertEqual(command[-1], "https://raw.githubusercontent.com/qiime2/distributions/refs/heads/dev/2026.7/qiime2/released/rachis-qiime2-linux-64-conda.yml")
+        tiny = install_command("2026.7", "tiny")
+        self.assertIn("/2026.7/tiny/released/rachis-tiny-linux-64-conda.yml", tiny[-1])
+
     def test_figaro_install_command_targets_selected_environment(self):
         self.assertEqual(figaro_install_command("qiime2-2024.10"), ["conda", "install", "-n", "qiime2-2024.10", "-c", "bioconda", "figaro", "-y"])
         with self.assertRaises(ValueError):

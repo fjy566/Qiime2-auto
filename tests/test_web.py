@@ -61,6 +61,9 @@ class WebSmokeTests(unittest.TestCase):
             self.assertIn("groupSamplePicker", page)
             self.assertIn("metadataColumnTemplates", page)
             self.assertIn("manifestSavePath", page)
+            self.assertIn("inputPathPickerButton", page)
+            self.assertIn("metadataSourceSamples", page)
+            self.assertIn("metadataSavePathPickerButton", page)
             self.assertIn("classifierCatalog", page)
             self.assertNotIn("commandOutput", page)
             self.assertNotIn("copyButton", page)
@@ -107,8 +110,12 @@ class WebSmokeTests(unittest.TestCase):
     def test_environment_and_install_preview_endpoints(self):
         options = self.get_json("/api/install-options")
         self.assertIn("2024.10", options["versions"])
+        self.assertEqual(options["latest"], "2026.7")
+        self.assertEqual(options["versions"][0], "2026.7")
         result = self.post_json("/api/install-preview", {"version": "2024.10", "distribution": "amplicon"})
         self.assertIn("conda", result["command"])
+        latest = self.post_json("/api/install-preview", {"version": "2026.7", "distribution": "amplicon"})
+        self.assertIn("rachis-qiime2-linux-64-conda.yml", latest["command_text"])
 
     def test_multi_file_fastq_picker_upload(self):
         result = self.post_multipart("/api/upload", "fastq", [("S1_R1.fastq.gz", b"@r1\nACGT\n+\nIIII\n"), ("S1_R2.fastq.gz", b"@r2\nTGCA\n+\nIIII\n")])
@@ -162,6 +169,12 @@ class WebSmokeTests(unittest.TestCase):
             self.assertEqual(manifest_saved["scan"]["existing_fastq_count"], 2)
             directories = self.get_json(f"/api/directories?path={root}")
             self.assertEqual(directories["current"], str(root.resolve()))
+            self.assertEqual(directories["files"], [])
+            filesystem = self.get_json(f"/api/directories?path={root}&include_files=1")
+            self.assertTrue(any(item["name"] == "manifest.weird" for item in filesystem["files"]))
+            samples = self.get_json(f"/api/samples?path={manifest}")
+            self.assertEqual(samples["sample_ids"], ["S1"])
+            self.assertTrue(samples["suggested_metadata_path"].endswith("metadata.tsv"))
 
     def test_classifier_catalog_is_allowlisted_and_project_scoped(self):
         catalog = self.get_json("/api/classifiers")

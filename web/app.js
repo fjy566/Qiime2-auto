@@ -4,6 +4,7 @@ const state = {
   uploadSession: '',
   selectedNames: [],
   uploadedFastqPaths: [],
+  availableSampleIds: [],
   metadata: '',
   metadataValid: false,
   classifier: '',
@@ -21,6 +22,7 @@ const state = {
   preflightRequest: 0,
   ancomChoice: null,
   directory: null,
+  pathPicker: null,
   busy: false,
   jobId: '',
 };
@@ -173,10 +175,11 @@ function showScan(scan, notify = true) {
   $('inputStatus').className = `inline-status ${scan.data_type ? 'good' : 'warn'}`;
   const canGenerateManifest = scan.kind === 'directory' && count > 0 && !isManifest;
   $('manifestButton').disabled = !canGenerateManifest;
-  $('metadataButton').disabled = !isManifest;
+  $('metadataButton').disabled = !scan.data_type;
   markStep('data', scan.data_type ? 'done' : 'active', scan.data_type ? '已识别' : '进行中');
-  markStep('metadata', isManifest ? 'active' : 'blocked', isManifest ? '待准备' : '先完成 manifest');
+  markStep('metadata', scan.data_type ? 'active' : 'blocked', scan.data_type ? '可选择样本' : '先完成数据识别');
   if (isManifest) window.setTimeout(() => loadManifestPreview(state.inputPath), 0);
+  window.setTimeout(() => loadAvailableSamples(state.inputPath, true), 0);
   if (notify) {
     if (scan.warnings?.length) toast(scan.warnings[0]);
     else if (scan.data_type) toast('数据已识别，可以继续准备 metadata。', true);
@@ -243,19 +246,42 @@ async function generateManifest() {
 }
 
 async function generateMetadata() {
-  if (!state.inputPath || !state.scan?.data_type?.startsWith('manifest')) { toast('请先选择或生成 manifest。'); return; }
-  setBusy($('metadataButton'), true, '正在生成…');
+  if (!state.inputPath || !state.scan?.data_type) { toast('请先选择 manifest 或导入 FASTQ 数据。'); return; }
+  setBusy($('metadataButton'), true, '正在读取样本…');
   try {
-    const data = await api('/api/metadata', { method: 'POST', body: JSON.stringify({ source_path: state.inputPath, columns: ['group'] }) });
-    state.metadata = data.path;
+    const data = await api(`/api/samples?path=${encodeURIComponent(state.inputPath)}`);
+    state.availableSampleIds = data.sample_ids || [];
+    if (state.metadataEditor) {
+      renderMetadataSourceSamples();
+      $('metadataEditorCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      toast('已读取当前数据的样本，请勾选后应用。', true);
+      return;
+    }
+    const headers = ['sample-id', 'group'];
+    const rows = state.availableSampleIds.map((sampleId) => ({ 'sample-id': sampleId, group: '' }));
+    if (!rows.length) rows.push({ 'sample-id': '', group: '' });
     state.metadataValid = false;
-    $('metadataPath').value = data.path;
-    $('metadataName').textContent = '已生成模板，请确认分组值';
-    await loadMetadataPreview(data.path);
-    await validateMetadata(data.path);
-    toast(`metadata 模板已生成，包含 ${data.sample_count} 个样本。`, true);
+    $('metadataName').textContent = state.availableSampleIds.length ? `已读取 ${state.availableSampleIds.length} 个样本，请确认范围` : '未识别到样本 ID，可自定义添加';
+    renderMetadataEditor({ path: data.suggested_metadata_path, headers, types: ['', 'categorical'], rows });
+    $('metadataEditorCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    toast(state.availableSampleIds.length ? '样本已带入 metadata 编辑器，可取消不参与分析的样本。' : '当前数据无法推断样本 ID，请自定义填写。', true);
   } catch (error) { toast(error.message); }
   finally { setBusy($('metadataButton'), false); }
+}
+
+async function loadAvailableSamples(path, silent = false) {
+  if (!path) return [];
+  try {
+    const data = await api(`/api/samples?path=${encodeURIComponent(path)}`);
+    state.availableSampleIds = data.sample_ids || [];
+    renderMetadataSourceSamples();
+    return state.availableSampleIds;
+  } catch (error) {
+    state.availableSampleIds = [];
+    renderMetadataSourceSamples();
+    if (!silent) toast(`样本读取失败：${error.message}`);
+    return [];
+  }
 }
 
 function metadataGroupColumn(editor = state.metadataEditor) {
@@ -276,6 +302,36 @@ function renderMetadataGroups() {
       return `<div class="group-chip" style="--chip-index:${index}"><span><i></i>${escapeHtml(group)} <small>${count} 个样本</small></span><button type="button" data-remove-group="${escapeHtml(group)}" aria-label="删除 ${escapeHtml(group)}">×</button></div>`;
     }).join('')
     : '<span class="group-empty">还没有组；先新建 control、treatment 等组</span>';
+}
+
+function renderMetadataSourceSamples() {
+  const target = $('metadataSourceSamples');
+  const editor = state.metadataEditor;
+  if (!target || !editor) return;
+  const idColumn = editor.headers[0];
+  const current = new Set(editor.rows.map((row) => row[idColumn]).filter(Boolean));
+  const available = state.availableSampleIds || [];
+  $('metadataSourceHint').textContent = available.length
+    ? `当前数据识别到 ${available.length} 个样本；取消不参与分析的样本后点击应用`
+    : '当前数据没有可推断的样本 ID，请使用“自定义样本”添加';
+  target.innerHTML = available.length
+    ? available.map((sampleId) => `<label class="source-sample-chip"><input type="checkbox" value="${escapeHtml(sampleId)}" ${current.has(sampleId) ? 'checked' : ''}><span>✓</span><strong>${escapeHtml(sampleId)}</strong></label>`).join('')
+    : '<div class="sample-picker-empty">没有自动识别的样本；EMP 等混样数据可在拆分后同步，或现在自定义填写。</div>';
+}
+
+function applyInputSampleSelection() {
+  const editor = state.metadataEditor;
+  if (!editor) return;
+  const idColumn = editor.headers[0];
+  const available = new Set(state.availableSampleIds || []);
+  const selected = new Set($$('#metadataSourceSamples input:checked').map((input) => input.value));
+  const existing = new Map(editor.rows.map((row) => [row[idColumn], row]));
+  const customRows = editor.rows.filter((row) => row[idColumn] && !available.has(row[idColumn]));
+  editor.rows = [...selected].map((sampleId) => existing.get(sampleId) || Object.fromEntries(editor.headers.map((header) => [header, header === idColumn ? sampleId : '']))).concat(customRows);
+  renderMetadataGroups();
+  renderMetadataTable();
+  markMetadataChanged();
+  toast(`已应用 ${selected.size} 个数据样本${customRows.length ? `，并保留 ${customRows.length} 个自定义样本` : ''}。`, true);
 }
 
 function renderGroupSamplePicker() {
@@ -343,9 +399,11 @@ function renderMetadataEditor(preview) {
     selectedSamples: new Set(),
   };
   if (!state.metadataEditor.types.length) state.metadataEditor.types = state.metadataEditor.headers.map((_, index) => index ? 'categorical' : '');
+  $('metadataSavePath').value = preview.path || 'prepared/metadata.tsv';
   $('metadataEditorCard').hidden = false;
   renderMetadataGroups();
   renderMetadataTable();
+  renderMetadataSourceSamples();
 }
 
 async function loadMetadataPreview(path, silent = false) {
@@ -434,6 +492,8 @@ function addMetadataRow() {
   editor.rows.push(row);
   renderMetadataTable();
   markMetadataChanged();
+  const input = $$('#metadataEditorTable [data-meta-column="sample-id"] input, #metadataEditorTable input[data-meta-column="sample-id"]').at(-1);
+  input?.focus();
 }
 
 async function saveMetadataEditor() {
@@ -441,7 +501,8 @@ async function saveMetadataEditor() {
   if (!editor) return;
   setBusy($('metadataSaveButton'), true, '保存中…');
   try {
-    const data = await api('/api/metadata-save', { method: 'POST', body: JSON.stringify({ path: editor.path, headers: editor.headers, types: editor.types, rows: editor.rows }) });
+    const path = readValue('metadataSavePath', editor.path || 'prepared/metadata.tsv');
+    const data = await api('/api/metadata-save', { method: 'POST', body: JSON.stringify({ path, headers: editor.headers, types: editor.types, rows: editor.rows }) });
     state.metadata = data.path;
     $('metadataPath').value = data.path;
     $('metadataName').textContent = '已保存并更新到服务器';
@@ -517,7 +578,10 @@ function renderManifestEditor() {
     const status = editor.path_status?.[rowIndex]?.files || [];
     const good = status.length > 0 && status.every((item) => item.exists);
     const complete = editor.headers.slice(1).every((column) => row[column]);
-    const cells = editor.headers.map((column, columnIndex) => `<td><input class="table-control ${!row[column] ? 'is-empty' : ''}" data-manifest-row="${rowIndex}" data-manifest-column="${escapeHtml(column)}" value="${escapeHtml(row[column] || '')}" placeholder="${columnIndex ? (column.includes('reverse') ? '/data/sample_R2.fastq.gz' : '/data/sample_R1.fastq.gz') : `sample-${rowIndex + 1}`}"></td>`).join('');
+    const cells = editor.headers.map((column, columnIndex) => {
+      const input = `<input class="table-control ${!row[column] ? 'is-empty' : ''}" data-manifest-row="${rowIndex}" data-manifest-column="${escapeHtml(column)}" value="${escapeHtml(row[column] || '')}" placeholder="${columnIndex ? (column.includes('reverse') ? '/data/sample_R2.fastq.gz' : '/data/sample_R1.fastq.gz') : `sample-${rowIndex + 1}`}">`;
+      return `<td>${columnIndex ? `<div class="table-path-control">${input}<button type="button" class="table-path-picker" data-pick-manifest-row="${rowIndex}" data-pick-manifest-column="${escapeHtml(column)}" title="选择 FASTQ 文件">选择</button></div>` : input}</td>`;
+    }).join('');
     const statusLabel = good ? '✓ 已找到' : status.length ? '路径待确认' : complete ? '保存后检查' : '需要补全';
     return `<tr>${cells}<td class="path-state ${good ? 'good' : 'warn'}">${statusLabel}</td><td class="row-actions"><button type="button" class="table-delete" data-remove-manifest-row="${rowIndex}">删除</button></td></tr>`;
   }).join('');
@@ -700,9 +764,10 @@ async function checkHealth() {
 }
 
 function updateInstallSummary() {
-  const version = readValue('installVersion', '2024.10');
+  const version = readValue('installVersion', '2026.7');
   const distribution = readValue('installDistribution', 'amplicon');
-  const name = readValue('installEnvironmentName') || `qiime2-${distribution}-${version}`;
+  const defaultPrefix = version === '2026.7' ? (distribution === 'amplicon' ? 'rachis-qiime2' : 'rachis-tiny') : `qiime2-${distribution}`;
+  const name = readValue('installEnvironmentName') || `${defaultPrefix}-${version}`;
   $('installSummary').textContent = `一键创建 Conda 环境：${name} · ${version} · ${distribution === 'amplicon' ? '扩增子分析版' : '轻量版'}`;
   const allowed = state.platform === 'posix' && state.condaAvailable;
   $('installButton').disabled = !allowed;
@@ -712,7 +777,7 @@ function updateInstallSummary() {
 async function loadInstallOptions() {
   try {
     const data = await api('/api/install-options');
-    $('installVersion').innerHTML = (data.versions || []).map((value) => `<option value="${escapeHtml(value)}">QIIME2 ${escapeHtml(value)}</option>`).join('');
+    $('installVersion').innerHTML = (data.versions || []).map((value) => `<option value="${escapeHtml(value)}">QIIME2 ${escapeHtml(value)}${value === data.latest ? '（最新）' : ''}</option>`).join('');
     $('installDistribution').innerHTML = (data.distributions || []).map((value) => `<option value="${escapeHtml(value)}">${value === 'amplicon' ? '扩增子分析版' : '轻量版'}</option>`).join('');
     updateInstallSummary();
   } catch (error) { $('installSummary').textContent = error.message; }
@@ -827,26 +892,76 @@ function closeDirectoryPicker() {
   $('directoryModal').hidden = true;
 }
 
+function openPathPicker(config) {
+  state.pathPicker = { mode: 'file', accept: [], ...config };
+  const currentValue = config.value ?? (config.targetId ? readValue(config.targetId) : '');
+  $('directoryModalTitle').textContent = config.title || (state.pathPicker.mode === 'directory' ? '选择服务器目录' : '选择服务器文件');
+  $('directoryModalHelp').textContent = config.help || '浏览当前服务所在机器的路径；单击文件即可选择，单击文件夹进入。';
+  $('directoryPickerHint').textContent = state.pathPicker.mode === 'save' ? '选择保存目录后会保留当前文件名。' : '这里只选择路径，不会修改或上传文件。';
+  loadDirectories(currentValue);
+}
+
+function fileMatchesPicker(file) {
+  const accept = state.pathPicker?.accept || [];
+  return !accept.length || accept.some((suffix) => file.name.toLowerCase().endsWith(suffix.toLowerCase()));
+}
+
 async function loadDirectories(path = '') {
   try {
-    const data = await api(`/api/directories?path=${encodeURIComponent(path)}`);
+    const includeFiles = state.pathPicker?.mode !== 'directory' && state.pathPicker?.mode !== 'save';
+    const data = await api(`/api/directories?path=${encodeURIComponent(path)}&include_files=${includeFiles ? '1' : '0'}`);
     state.directory = data;
     $('directoryModal').hidden = false;
     $('directoryPathInput').value = data.current || '';
     $('directoryCurrentLabel').textContent = data.current || '';
     $('directoryParentButton').disabled = !data.parent;
-    $('directoryList').innerHTML = (data.directories || []).length
-      ? data.directories.map((directory) => `<button type="button" class="directory-entry" data-directory-path="${escapeHtml(directory.path)}"><span>▸</span><strong>${escapeHtml(directory.name)}</strong></button>`).join('')
+    const directories = (data.directories || []).map((directory) => `<button type="button" class="directory-entry" data-directory-path="${escapeHtml(directory.path)}"><span>▸</span><strong>${escapeHtml(directory.name)}</strong><small>文件夹</small></button>`);
+    const files = (data.files || []).filter(fileMatchesPicker).map((file) => {
+      const type = (file.suffix || '').replace(/^\./, '').toUpperCase();
+      return `<button type="button" class="directory-entry file-entry" data-file-path="${escapeHtml(file.path)}"><span>◇</span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(type ? `${type} 文件` : '文件')}</small></button>`;
+    });
+    const entries = [...directories, ...files];
+    $('directoryList').innerHTML = entries.length
+      ? entries.join('')
       : '<div class="directory-empty">当前目录没有可进入的子目录。</div>';
+    const canChooseDirectory = ['directory', 'save', 'input'].includes(state.pathPicker?.mode);
+    $('directoryChooseButton').hidden = !canChooseDirectory;
+    $('directoryChooseButton').textContent = state.pathPicker?.mode === 'save' ? '保存到当前目录' : '使用当前目录';
   } catch (error) { toast(`读取目录失败：${error.message}`); }
+}
+
+function joinServerPath(directory, filename) {
+  const separator = String(directory).includes('\\') ? '\\' : '/';
+  return `${String(directory).replace(/[\\/]+$/, '')}${separator}${filename}`;
+}
+
+function basename(value, fallback = '') {
+  return String(value || '').split(/[\\/]/).pop() || fallback;
+}
+
+async function applyPickedPath(value) {
+  const picker = state.pathPicker;
+  if (!picker || !value) return;
+  if (picker.mode === 'save') value = joinServerPath(value, basename(readValue(picker.targetId), picker.defaultName || 'manifest.tsv'));
+  if (picker.row !== undefined && picker.column && state.manifestEditor) {
+    state.manifestEditor.rows[picker.row][picker.column] = value;
+    state.manifestEditor.path_status = [];
+    renderManifestEditor();
+  } else if (picker.targetId && $(picker.targetId)) {
+    $(picker.targetId).value = value;
+  }
+  closeDirectoryPicker();
+  if (picker.targetId === 'inputPath') { state.inputPath = value; await scan(); }
+  else if (picker.targetId === 'metadataPath') { state.metadata = value; if (await loadMetadataPreview(value, true)) await validateMetadata(value, true); }
+  else if (picker.targetId === 'classifierPath') setClassifier(value, '已选择服务器分类器');
+  else if (picker.targetId === 'outputPath') { updateReadiness(); toast('输出目录已选择。', true); }
+  else if (picker.targetId === 'manifestSavePath') toast('manifest 保存位置已选择。', true);
+  else if (picker.targetId === 'metadataSavePath') toast('metadata 保存位置已选择。', true);
 }
 
 function chooseCurrentDirectory() {
   const value = state.directory?.current || readValue('directoryPathInput');
-  if (value) $('outputPath').value = value;
-  closeDirectoryPicker();
-  updateReadiness();
-  toast('输出目录已选择。', true);
+  if (value) applyPickedPath(value);
 }
 
 function metadataPath() { return state.metadata || readValue('metadataPath'); }
@@ -886,7 +1001,7 @@ function updateOptionDependencies() {
   const skipTaxonomy = isChecked('skipTaxonomy');
   const classifierControls = $('classifierControls');
   classifierControls?.classList.toggle('dependency-disabled', skipTaxonomy);
-  ['classifierPicker', 'classifierPath'].forEach((id) => { if ($(id)) $(id).disabled = skipTaxonomy; });
+  ['classifierPicker', 'classifierPath', 'classifierPathPickerButton'].forEach((id) => { if ($(id)) $(id).disabled = skipTaxonomy; });
   $('classifierCatalog')?.querySelectorAll('button').forEach((button) => { button.disabled = skipTaxonomy; });
   const classifierNote = $('classifierDependencyNote');
   if (classifierNote) {
@@ -1108,6 +1223,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderSelectedFiles();
   updateSamplingMode();
   bind('scanButton', 'click', scan);
+  bind('inputPathPickerButton', 'click', () => openPathPicker({ targetId: 'inputPath', mode: 'input', title: '选择数据文件或目录', help: '可以选择 manifest 文件，也可以直接选择包含 FASTQ 的服务器目录。' }));
   bind('inputPath', 'keydown', (event) => { if (event.key === 'Enter') scan(); });
   bind('inputPath', 'input', () => { state.inputPath = readValue('inputPath'); state.scan = null; state.preflight = null; updateReadiness(); });
   bind('fastqPicker', 'change', (event) => uploadFiles(event.target, 'fastq'));
@@ -1120,12 +1236,16 @@ document.addEventListener('DOMContentLoaded', () => {
   bind('manifestAddRowButton', 'click', addManifestRow);
   bind('manifestPreviewButton', 'click', () => state.manifestEditor?.isNew ? createManifestEditor() : loadManifestPreview(state.manifestEditor?.path || state.inputPath, false));
   bind('manifestSaveButton', 'click', saveManifestEditor);
+  bind('manifestSavePathPickerButton', 'click', () => openPathPicker({ targetId: 'manifestSavePath', mode: 'save', title: '选择 manifest 保存目录', defaultName: 'manifest.tsv', help: '进入目标目录后点击“保存到当前目录”，文件名会继续使用输入框中的名称。' }));
+  bind('metadataSavePathPickerButton', 'click', () => openPathPicker({ targetId: 'metadataSavePath', mode: 'save', title: '选择 metadata 保存目录', defaultName: 'metadata.tsv', help: '进入目标目录后点击“保存到当前目录”，文件名会继续使用输入框中的名称。' }));
   bind('manifestTypeSelect', 'change', (event) => changeManifestType(event.target.value));
   bind('metadataAddColumnButton', 'click', addMetadataColumn);
   bind('metadataPreviewButton', 'click', () => loadMetadataPreview(state.metadata || readValue('metadataPath'), false));
   bind('metadataValidateButton', 'click', () => validateMetadata(state.metadata || readValue('metadataPath')));
   bind('metadataSaveButton', 'click', saveMetadataEditor);
   bind('addGroupButton', 'click', addMetadataGroup);
+  bind('applyInputSamplesButton', 'click', applyInputSampleSelection);
+  bind('metadataAddRowButton', 'click', addMetadataRow);
   bind('groupNameInput', 'keydown', (event) => { if (event.key === 'Enter') addMetadataGroup(); });
   bind('groupSampleSearch', 'input', renderGroupSamplePicker);
   bind('selectAllSamples', 'click', () => { if (!state.metadataEditor) return; state.metadataEditor.selectedSamples = new Set(state.metadataEditor.rows.map((_, index) => index)); renderGroupSamplePicker(); });
@@ -1152,10 +1272,12 @@ document.addEventListener('DOMContentLoaded', () => {
   bind('figaroInstallButton', 'click', installFigaro);
   bind('metadataPath', 'input', () => { state.metadata = readValue('metadataPath'); state.metadataValid = false; state.preflight = null; $('metadataName').textContent = state.metadata ? '等待校验服务器路径' : '未选择 metadata'; updateMetadataCapability(); updateReadiness(); });
   bind('metadataPath', 'blur', async () => { const path = readValue('metadataPath'); if (!path) return; if (await loadMetadataPreview(path, true)) await validateMetadata(path, true); else { $('metadataValidation').textContent = '无法打开这个 metadata 路径，请检查文件是否存在。'; $('metadataValidation').className = 'validation-note warn'; } });
+  bind('metadataPathPickerButton', 'click', () => openPathPicker({ targetId: 'metadataPath', mode: 'file', title: '选择 metadata 文件', help: 'metadata 可以使用任意后缀；程序会按制表符内容读取。' }));
   bind('classifierPath', 'input', () => { state.classifier = readValue('classifierPath'); state.preflight = null; $('classifierName').textContent = state.classifier ? '使用服务器路径' : '未选择分类器'; updateReadiness(); });
+  bind('classifierPathPickerButton', 'click', () => openPathPicker({ targetId: 'classifierPath', mode: 'file', accept: ['.qza'], title: '选择分类器文件', help: '这里只显示 QIIME2 分类器 .qza 文件。' }));
   bind('outputPath', 'input', () => { state.preflight = null; updateReadiness(); });
   ['primerF', 'primerR', 'truncLenF', 'truncLenR', 'minQuality', 'minFrequency'].forEach((id) => bind(id, 'input', updateReadiness));
-  bind('outputPickerButton', 'click', () => loadDirectories(readValue('outputPath')));
+  bind('outputPickerButton', 'click', () => openPathPicker({ targetId: 'outputPath', mode: 'directory', title: '选择结果输出目录', help: '分析结果会写入这个服务器目录，程序会自动创建需要的子目录。' }));
   bind('directoryCloseButton', 'click', closeDirectoryPicker);
   bind('directoryGoButton', 'click', () => loadDirectories(readValue('directoryPathInput')));
   bind('directoryPathInput', 'keydown', (event) => { if (event.key === 'Enter') loadDirectories(readValue('directoryPathInput')); });
@@ -1207,12 +1329,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (target && state.manifestEditor) { state.manifestEditor.rows[Number(target.dataset.manifestRow)][target.dataset.manifestColumn] = target.value; state.manifestEditor.path_status = []; target.classList.toggle('is-empty', !target.value.trim()); }
   });
   $('manifestEditorTable')?.addEventListener('click', (event) => {
+    const picker = event.target.closest('[data-pick-manifest-row][data-pick-manifest-column]');
+    if (picker) {
+      const row = Number(picker.dataset.pickManifestRow);
+      const column = picker.dataset.pickManifestColumn;
+      openPathPicker({ row, column, mode: 'file', accept: ['.fastq', '.fq', '.fastq.gz', '.fq.gz'], value: state.manifestEditor?.rows[row]?.[column] || '', title: column.includes('reverse') ? '选择 R2 FASTQ' : '选择 R1 FASTQ', help: '选择当前样本对应的服务器 FASTQ 文件。' });
+      return;
+    }
     const row = event.target.closest('[data-remove-manifest-row]')?.dataset.removeManifestRow;
     if (row !== undefined && window.confirm('确定删除这个 manifest 样本吗？')) { state.manifestEditor.rows.splice(Number(row), 1); renderManifestEditor(); }
   });
   $('directoryList')?.addEventListener('click', (event) => {
     const button = event.target.closest('[data-directory-path]');
     if (button) loadDirectories(button.dataset.directoryPath);
+    const file = event.target.closest('[data-file-path]');
+    if (file) applyPickedPath(file.dataset.filePath);
   });
   $('directoryModal')?.addEventListener('click', (event) => { if (event.target.id === 'directoryModal') closeDirectoryPicker(); });
   $$('input[name="samplingMode"]').forEach((input) => input.addEventListener('change', updateSamplingMode));

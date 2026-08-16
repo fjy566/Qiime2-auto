@@ -269,6 +269,21 @@ def read_sample_ids(path: str | Path) -> list[str]:
     return [row["sample-id"] for row in rows if row.get("sample-id")]
 
 
+def sample_ids_for_input(input_path: str | Path) -> list[str]:
+    """Return sample IDs that can be selected before a metadata file exists."""
+
+    path = Path(input_path)
+    scan = scan_input(path)
+    manifest_path = scan.get("manifest_path")
+    if manifest_path:
+        return sorted(set(read_sample_ids(manifest_path)))
+    if path.is_file() and str(scan.get("data_type", "")).startswith("manifest"):
+        return sorted(set(read_sample_ids(path)))
+    files = [path] if path.is_file() and is_fastq(path) else [item for item in path.rglob("*") if item.is_file() and is_fastq(item)] if path.is_dir() else []
+    sample_ids = {parsed[0] for file in files if (parsed := _sample_and_read(file))}
+    return sorted(sample_ids)
+
+
 def detect_data_type(input_path: str | Path) -> str | None:
     path = Path(input_path)
     if path.is_dir():

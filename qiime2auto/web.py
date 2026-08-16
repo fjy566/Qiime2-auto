@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from .classifiers import CLASSIFIER_ROOT, classifier_catalog, download_classifier
 from .config import AnalysisConfig
 from .environment import discover_environments, figaro_install_command, install_command, install_options
-from .io import generate_manifest, generate_metadata_template, inspect_manifest, is_fastq, read_sample_ids, reconcile_manifest, scan_input, validate_metadata_details
+from .io import generate_manifest, generate_metadata_template, inspect_manifest, is_fastq, read_sample_ids, reconcile_manifest, sample_ids_for_input, scan_input, validate_metadata_details
 from .pipeline import PipelineOptions, run_analysis
 from .preflight import build_preflight
 from .runner import command_text
@@ -54,7 +54,7 @@ def _preview_command(data: dict) -> str:
     return command_text(parts)
 
 
-def _list_directories(path_value: str | None) -> dict:
+def _list_directories(path_value: str | None, include_files: bool = False) -> dict:
     requested = Path(path_value).expanduser() if path_value else Path.cwd()
     if requested.exists() and not requested.is_dir():
         requested = requested.parent
@@ -64,14 +64,17 @@ def _list_directories(path_value: str | None) -> dict:
     if not current.is_dir():
         current = Path.cwd().resolve()
     directories = []
+    files = []
     for child in sorted(current.iterdir(), key=lambda item: item.name.lower()):
         try:
             if child.is_dir() and not child.name.startswith("."):
                 directories.append({"name": child.name, "path": str(child.resolve())})
+            elif include_files and child.is_file() and not child.name.startswith("."):
+                files.append({"name": child.name, "path": str(child.resolve()), "suffix": "".join(child.suffixes).lower()})
         except OSError:
             continue
     parent = current.parent if current.parent != current else None
-    return {"current": str(current), "parent": str(parent) if parent else None, "directories": directories}
+    return {"current": str(current), "parent": str(parent) if parent else None, "directories": directories, "files": files}
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -111,7 +114,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/directories":
             values = parse_qs(parsed.query)
-            self._send({"ok": True, **_list_directories(values.get("path", [""])[0])})
+            include_files = values.get("include_files", ["0"])[0].lower() in {"1", "true", "yes"}
+            self._send({"ok": True, **_list_directories(values.get("path", [""])[0], include_files=include_files)})
+            return
+        if parsed.path == "/api/samples":
+            values = parse_qs(parsed.query)
+            path = values.get("path", [""])[0]
+            if not path:
+                raise ValueError("请先选择 manifest 或 FASTQ 数据")
+            sample_ids = sample_ids_for_input(path)
+            source = Path(path).expanduser()
+            base = source if source.is_dir() else source.parent
+            self._send({"ok": True, "path": path, "sample_ids": sample_ids, "sample_count": len(sample_ids), "suggested_metadata_path": str((base / "metadata.tsv").resolve())})
             return
         if parsed.path == "/api/scan":
             values = parse_qs(parsed.query)
