@@ -3,6 +3,7 @@ const state = {
   inputPath: '',
   uploadSession: '',
   selectedNames: [],
+  uploadedFastqPaths: [],
   metadata: '',
   metadataValid: false,
   classifier: '',
@@ -23,6 +24,19 @@ const state = {
   busy: false,
   jobId: '',
 };
+
+const METADATA_COLUMN_TEMPLATES = [
+  { name: 'group', type: 'categorical', label: '实验分组', hint: 'control / treatment', icon: '◫' },
+  { name: 'subject-id', type: 'categorical', label: '受试者', hint: '同一对象的重复采样', icon: '◎' },
+  { name: 'timepoint', type: 'categorical', label: '时间点', hint: 'day-0 / day-7', icon: '◷' },
+  { name: 'body-site', type: 'categorical', label: '采样部位', hint: 'gut / oral / skin', icon: '⌖' },
+  { name: 'treatment', type: 'categorical', label: '处理方式', hint: '药物、剂量或条件', icon: '✦' },
+  { name: 'batch', type: 'categorical', label: '实验批次', hint: '排查批次效应', icon: '▦' },
+  { name: 'replicate', type: 'categorical', label: '重复编号', hint: '生物或技术重复', icon: '⧉' },
+  { name: 'age', type: 'numeric', label: '年龄', hint: '连续数值', icon: '∿' },
+  { name: 'ph', type: 'numeric', label: 'pH', hint: '连续测量值', icon: '◇' },
+  { name: 'temperature', type: 'numeric', label: '温度', hint: '连续测量值', icon: '⌁' },
+];
 
 const $ = (id) => document.getElementById(id);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -192,6 +206,7 @@ async function uploadFiles(input, kind) {
   try {
     const result = await api('/api/upload', { method: 'POST', body });
     state.uploadSession = result.session_id || state.uploadSession;
+    if (kind === 'fastq') state.uploadedFastqPaths = [...new Set([...state.uploadedFastqPaths, ...(result.files || [])])];
     if (kind === 'classifier') {
       state.classifier = result.path;
       $('classifierPath').value = result.path;
@@ -256,8 +271,37 @@ function renderMetadataGroups() {
   const existing = editor.rows.map((row) => row[column] || '').filter(Boolean);
   editor.groups = [...new Set([...(editor.groups || []), ...existing])];
   target.innerHTML = editor.groups.length
-    ? editor.groups.map((group) => `<button type="button" class="group-chip" data-remove-group="${escapeHtml(group)}"><span>${escapeHtml(group)}</span><b>×</b></button>`).join('')
+    ? editor.groups.map((group, index) => {
+      const count = editor.rows.filter((row) => row[column] === group).length;
+      return `<div class="group-chip" style="--chip-index:${index}"><span><i></i>${escapeHtml(group)} <small>${count} 个样本</small></span><button type="button" data-remove-group="${escapeHtml(group)}" aria-label="删除 ${escapeHtml(group)}">×</button></div>`;
+    }).join('')
     : '<span class="group-empty">还没有组；先新建 control、treatment 等组</span>';
+}
+
+function renderGroupSamplePicker() {
+  const target = $('groupSamplePicker');
+  const editor = state.metadataEditor;
+  if (!target || !editor) return;
+  const idColumn = editor.headers[0];
+  const groupColumn = metadataGroupColumn(editor);
+  const query = readValue('groupSampleSearch').toLowerCase();
+  const visible = editor.rows.map((row, index) => ({ row, index })).filter(({ row }) => !query || String(row[idColumn] || '').toLowerCase().includes(query));
+  target.innerHTML = visible.length ? visible.map(({ row, index }) => {
+    const sampleId = row[idColumn] || `第 ${index + 1} 行（未填写 ID）`;
+    const group = row[groupColumn] || '未分组';
+    const checked = editor.selectedSamples?.has(index) ? 'checked' : '';
+    return `<label class="sample-choice ${group === '未分组' ? 'unassigned' : ''}"><input type="checkbox" data-group-sample="${index}" ${checked}><span class="sample-check">✓</span><span><strong>${escapeHtml(sampleId)}</strong><small>${escapeHtml(group)}</small></span></label>`;
+  }).join('') : '<div class="sample-picker-empty">没有匹配的样本</div>';
+}
+
+function renderMetadataColumnTemplates() {
+  const target = $('metadataColumnTemplates');
+  const editor = state.metadataEditor;
+  if (!target || !editor) return;
+  target.innerHTML = METADATA_COLUMN_TEMPLATES.map((template) => {
+    const exists = editor.headers.some((header) => header.toLowerCase() === template.name);
+    return `<button type="button" class="column-template ${exists ? 'added' : ''}" data-column-template="${template.name}" ${exists ? 'disabled' : ''}><span>${template.icon}</span><div><strong>${template.label}</strong><small>${template.name} · ${template.hint}</small></div><b>${exists ? '已添加' : '+'}</b></button>`;
+  }).join('');
 }
 
 function renderMetadataTable() {
@@ -266,7 +310,7 @@ function renderMetadataTable() {
   if (!table || !editor) return;
   const groupColumn = metadataGroupColumn(editor);
   const groupOptions = [...new Set([...(editor.groups || []), ...editor.rows.map((row) => row[groupColumn] || '').filter(Boolean)])];
-  const header = editor.headers.map((column, index) => `<th><div>${escapeHtml(column)}${index ? `<small>${escapeHtml(editor.types[index] || '未声明')}</small>` : '<small>样本 ID</small>'}</div>${index ? `<button type="button" class="table-delete" data-remove-column="${escapeHtml(column)}" title="删除这一列">×</button>` : ''}</th>`).join('');
+  const header = editor.headers.map((column, index) => `<th><div>${escapeHtml(column)}${index ? `<select class="column-type-select" data-column-type="${index}"><option value="categorical" ${editor.types[index] === 'categorical' ? 'selected' : ''}>分类</option><option value="numeric" ${editor.types[index] === 'numeric' ? 'selected' : ''}>数值</option></select>` : '<small>样本 ID</small>'}</div>${index ? `<button type="button" class="table-delete" data-remove-column="${escapeHtml(column)}" title="删除这一列">×</button>` : ''}</th>`).join('');
   const body = editor.rows.map((row, rowIndex) => {
     const cells = editor.headers.map((column, columnIndex) => {
       const value = row[column] || '';
@@ -285,6 +329,8 @@ function renderMetadataTable() {
   if (summary) summary.textContent = `${editor.rows.length} 个样本 · ${editor.headers.length - 1} 个 metadata 列 · 空白单元格会按 QIIME2 缺失值处理`;
   const badge = $('metadataEditorBadge');
   if (badge) badge.textContent = `${editor.rows.length} samples · ${editor.headers.length} columns`;
+  renderGroupSamplePicker();
+  renderMetadataColumnTemplates();
 }
 
 function renderMetadataEditor(preview) {
@@ -294,6 +340,7 @@ function renderMetadataEditor(preview) {
     types: [...(preview.types || [])],
     rows: (preview.rows || []).map((row) => ({ ...row })),
     groups: [],
+    selectedSamples: new Set(),
   };
   if (!state.metadataEditor.types.length) state.metadataEditor.types = state.metadataEditor.headers.map((_, index) => index ? 'categorical' : '');
   $('metadataEditorCard').hidden = false;
@@ -317,30 +364,41 @@ function addMetadataGroup() {
   const editor = state.metadataEditor;
   const input = $('groupNameInput');
   const group = input?.value.trim();
-  if (!editor || !group) { toast('请输入组名，例如 control 或 treatment。'); return; }
+  if (!editor || !group) { toast('先输入组名，例如 control 或 treatment。'); return; }
+  if (!editor.selectedSamples?.size) { toast('还没有选择样本。请勾选属于这个组的样本。'); return; }
+  let column = metadataGroupColumn(editor);
+  if (!editor.headers.some((header) => header === column)) {
+    addMetadataColumn('group', 'categorical');
+    column = 'group';
+  }
   if (!editor.groups.includes(group)) editor.groups.push(group);
+  editor.selectedSamples.forEach((index) => { if (editor.rows[index]) editor.rows[index][column] = group; });
+  const assignedCount = editor.selectedSamples.size;
+  editor.selectedSamples.clear();
   input.value = '';
   renderMetadataGroups();
   renderMetadataTable();
   markMetadataChanged();
+  toast(`已把 ${assignedCount} 个样本分到 ${group}。`, true);
 }
 
-function addMetadataColumn() {
+function addMetadataColumn(name, type = 'categorical') {
   const editor = state.metadataEditor;
   if (!editor) return;
-  const name = window.prompt('请输入新列名，例如 timepoint、site 或 treatment：', 'timepoint')?.trim();
-  if (!name) return;
+  if (!name) { $('customColumnForm').hidden = !$('customColumnForm').hidden; if (!$('customColumnForm').hidden) $('customColumnName').focus(); return; }
+  name = String(name).trim();
   if (name.toLowerCase() === 'sample-id' || editor.headers.some((header) => header.toLowerCase() === name.toLowerCase())) {
     toast('这个列名已经存在，或不能使用 sample-id。');
-    return;
+    return false;
   }
-  const type = (window.prompt('请选择列类型：categorical（分类）或 numeric（数值）', 'categorical') || 'categorical').trim().toLowerCase();
-  if (!['categorical', 'numeric'].includes(type)) { toast('列类型只能是 categorical 或 numeric。'); return; }
+  type = String(type).trim().toLowerCase();
+  if (!['categorical', 'numeric'].includes(type)) { toast('列类型只能是 categorical 或 numeric。'); return false; }
   editor.headers.push(name);
   editor.types.push(type);
   editor.rows.forEach((row) => { row[name] = ''; });
   renderMetadataTable();
   markMetadataChanged();
+  return true;
 }
 
 function removeMetadataColumn(name) {
@@ -395,10 +453,12 @@ async function saveMetadataEditor() {
 }
 
 async function loadManifestPreview(path, silent = true) {
-  if (!path || !state.scan?.data_type?.startsWith('manifest')) return false;
+  if (!path) return false;
   try {
     const data = await api('/api/manifest-preview', { method: 'POST', body: JSON.stringify({ path }) });
-    state.manifestEditor = { ...data.preview, rows: (data.preview.rows || []).map((row) => ({ ...row })) };
+    state.manifestEditor = { ...data.preview, isNew: false, rows: (data.preview.rows || []).map((row) => ({ ...row })) };
+    $('manifestTypeSelect').value = state.manifestEditor.data_type;
+    $('manifestSavePath').value = state.manifestEditor.path;
     renderManifestEditor();
     return true;
   } catch (error) {
@@ -407,20 +467,59 @@ async function loadManifestPreview(path, silent = true) {
   }
 }
 
+function manifestHeaders(dataType) {
+  return dataType === 'manifest_single'
+    ? ['sample-id', 'absolute-filepath']
+    : ['sample-id', 'forward-absolute-filepath', 'reverse-absolute-filepath'];
+}
+
+function sampleNameFromFastq(path) {
+  const filename = String(path).split(/[\\/]/).pop() || '';
+  return filename.replace(/\.(fastq|fq)(\.gz)?$/i, '').replace(/([._-])R?[12]([._-]?\d{3})?$/i, '').replace(/([._-])read[12]$/i, '') || 'sample';
+}
+
+function createManifestEditor() {
+  const dataType = $('manifestTypeSelect')?.value || 'manifest_paired';
+  const headers = manifestHeaders(dataType);
+  const paths = state.uploadedFastqPaths;
+  const rowsBySample = new Map();
+  paths.forEach((path) => {
+    const sample = sampleNameFromFastq(path);
+    if (!rowsBySample.has(sample)) rowsBySample.set(sample, { 'sample-id': sample });
+    const row = rowsBySample.get(sample);
+    if (dataType === 'manifest_single') row['absolute-filepath'] ||= path;
+    else if (/(^|[._-])R?2([._-]|\d|$)/i.test(path) || /read2/i.test(path)) row['reverse-absolute-filepath'] = path;
+    else row['forward-absolute-filepath'] ||= path;
+  });
+  const rows = [...rowsBySample.values()];
+  if (!rows.length) rows.push(Object.fromEntries(headers.map((header) => [header, ''])));
+  rows.forEach((row) => headers.forEach((header) => { row[header] ||= ''; }));
+  state.manifestEditor = { path: readValue('manifestSavePath', 'prepared/manifest.tsv'), isNew: true, data_type: dataType, headers, rows, sample_count: rows.length, fastq_count: paths.length, missing_files: [], path_status: [] };
+  renderManifestEditor();
+  $('manifestEditorCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  toast(paths.length ? `已把选择过的 ${paths.length} 个 FASTQ 带入编辑器，请确认配对。` : '空白 manifest 已建立，请填写第一个样本。', true);
+}
+
 function renderManifestEditor() {
   const editor = state.manifestEditor;
   const card = $('manifestEditorCard');
   const table = $('manifestEditorTable');
   if (!editor || !card || !table) return;
   card.hidden = false;
-  $('manifestEditorBadge').textContent = `${editor.sample_count || editor.rows.length} samples · ${editor.data_type === 'manifest_paired' ? '双端' : '单端'}`;
-  $('manifestEditorSummary').textContent = `${editor.rows.length} 个样本 · ${editor.fastq_count || 0} 个 FASTQ 路径 · ${editor.missing_files?.length || 0} 个路径待确认`;
+  $('manifestTypeSelect').value = editor.data_type;
+  if (!$('manifestSavePath').value) $('manifestSavePath').value = editor.path || 'prepared/manifest.tsv';
+  $('manifestEditorBadge').textContent = `${editor.rows.length} samples · ${editor.data_type === 'manifest_paired' ? '双端' : '单端'}`;
+  const requiredPaths = editor.rows.length * (editor.headers.length - 1);
+  const filledPaths = editor.rows.reduce((count, row) => count + editor.headers.slice(1).filter((column) => row[column]).length, 0);
+  $('manifestEditorSummary').innerHTML = `<strong>${editor.rows.length}</strong> 个样本 <i></i><strong>${filledPaths}/${requiredPaths}</strong> 个 FASTQ 路径已填写 <i></i><span>${filledPaths === requiredPaths ? '可以保存' : '请补齐空白路径'}</span>`;
   const header = editor.headers.map((column) => `<th>${escapeHtml(column)}</th>`).join('');
   const body = editor.rows.map((row, rowIndex) => {
     const status = editor.path_status?.[rowIndex]?.files || [];
     const good = status.length > 0 && status.every((item) => item.exists);
-    const cells = editor.headers.map((column) => `<td><input class="table-control" data-manifest-row="${rowIndex}" data-manifest-column="${escapeHtml(column)}" value="${escapeHtml(row[column] || '')}"></td>`).join('');
-    return `<tr>${cells}<td class="path-state ${good ? 'good' : 'warn'}">${good ? '✓ 已找到' : '待匹配'}</td><td class="row-actions"><button type="button" class="table-delete" data-remove-manifest-row="${rowIndex}">删除</button></td></tr>`;
+    const complete = editor.headers.slice(1).every((column) => row[column]);
+    const cells = editor.headers.map((column, columnIndex) => `<td><input class="table-control ${!row[column] ? 'is-empty' : ''}" data-manifest-row="${rowIndex}" data-manifest-column="${escapeHtml(column)}" value="${escapeHtml(row[column] || '')}" placeholder="${columnIndex ? (column.includes('reverse') ? '/data/sample_R2.fastq.gz' : '/data/sample_R1.fastq.gz') : `sample-${rowIndex + 1}`}"></td>`).join('');
+    const statusLabel = good ? '✓ 已找到' : status.length ? '路径待确认' : complete ? '保存后检查' : '需要补全';
+    return `<tr>${cells}<td class="path-state ${good ? 'good' : 'warn'}">${statusLabel}</td><td class="row-actions"><button type="button" class="table-delete" data-remove-manifest-row="${rowIndex}">删除</button></td></tr>`;
   }).join('');
   table.innerHTML = `<thead><tr>${header}<th>文件状态</th><th class="actions-heading">操作</th></tr></thead><tbody>${body || '<tr><td class="table-empty" colspan="99">还没有样本行</td></tr>'}</tbody>`;
 }
@@ -434,16 +533,42 @@ function addManifestRow() {
   renderManifestEditor();
 }
 
+function changeManifestType(dataType) {
+  const editor = state.manifestEditor;
+  if (!editor) return;
+  const previousHeaders = editor.headers;
+  const headers = manifestHeaders(dataType);
+  editor.rows = editor.rows.map((row) => {
+    const next = { 'sample-id': row['sample-id'] || '' };
+    if (dataType === 'manifest_single') next['absolute-filepath'] = row['absolute-filepath'] || row['forward-absolute-filepath'] || '';
+    else {
+      next['forward-absolute-filepath'] = row['forward-absolute-filepath'] || row['absolute-filepath'] || '';
+      next['reverse-absolute-filepath'] = row['reverse-absolute-filepath'] || '';
+    }
+    return next;
+  });
+  editor.data_type = dataType;
+  editor.headers = headers;
+  editor.path_status = [];
+  editor.missing_files = [];
+  renderManifestEditor();
+  if (previousHeaders.length !== headers.length) toast(dataType === 'manifest_paired' ? '已切换为双端，请为每个样本补齐 R2。' : '已切换为单端，将使用原来的 R1 路径。');
+}
+
 async function saveManifestEditor() {
   const editor = state.manifestEditor;
   if (!editor) return;
   setBusy($('manifestSaveButton'), true, '保存中…');
   try {
-    const data = await api('/api/manifest-save', { method: 'POST', body: JSON.stringify({ path: editor.path, data_type: editor.data_type, rows: editor.rows }) });
+    const path = readValue('manifestSavePath', editor.path || 'prepared/manifest.tsv');
+    const data = await api('/api/manifest-save', { method: 'POST', body: JSON.stringify({ path, data_type: editor.data_type, rows: editor.rows }) });
     showScan(data.scan, false);
-    state.manifestEditor = data.preview;
+    state.manifestEditor = { ...data.preview, isNew: false };
+    state.inputPath = data.path;
+    $('inputPath').value = data.path;
+    $('manifestSavePath').value = data.path;
     renderManifestEditor();
-    toast('manifest 已保存，序列文件识别结果已刷新。', true);
+    toast('manifest 已保存并设为本次分析输入。', true);
   } catch (error) { toast(`manifest 保存失败：${error.message}`); }
   finally { setBusy($('manifestSaveButton'), false); }
 }
@@ -990,16 +1115,23 @@ document.addEventListener('DOMContentLoaded', () => {
   bind('classifierPicker', 'change', (event) => uploadFiles(event.target, 'classifier'));
   bind('metadataPicker', 'change', (event) => uploadFiles(event.target, 'metadata'));
   bind('manifestButton', 'click', generateManifest);
+  bind('manifestCreateButton', 'click', createManifestEditor);
   bind('metadataButton', 'click', generateMetadata);
   bind('manifestAddRowButton', 'click', addManifestRow);
-  bind('manifestPreviewButton', 'click', () => loadManifestPreview(state.manifestEditor?.path || state.inputPath, false));
+  bind('manifestPreviewButton', 'click', () => state.manifestEditor?.isNew ? createManifestEditor() : loadManifestPreview(state.manifestEditor?.path || state.inputPath, false));
   bind('manifestSaveButton', 'click', saveManifestEditor);
+  bind('manifestTypeSelect', 'change', (event) => changeManifestType(event.target.value));
   bind('metadataAddColumnButton', 'click', addMetadataColumn);
   bind('metadataPreviewButton', 'click', () => loadMetadataPreview(state.metadata || readValue('metadataPath'), false));
   bind('metadataValidateButton', 'click', () => validateMetadata(state.metadata || readValue('metadataPath')));
   bind('metadataSaveButton', 'click', saveMetadataEditor);
   bind('addGroupButton', 'click', addMetadataGroup);
   bind('groupNameInput', 'keydown', (event) => { if (event.key === 'Enter') addMetadataGroup(); });
+  bind('groupSampleSearch', 'input', renderGroupSamplePicker);
+  bind('selectAllSamples', 'click', () => { if (!state.metadataEditor) return; state.metadataEditor.selectedSamples = new Set(state.metadataEditor.rows.map((_, index) => index)); renderGroupSamplePicker(); });
+  bind('selectUnassignedSamples', 'click', () => { if (!state.metadataEditor) return; const column = metadataGroupColumn(); state.metadataEditor.selectedSamples = new Set(state.metadataEditor.rows.map((row, index) => row[column] ? null : index).filter((index) => index !== null)); renderGroupSamplePicker(); });
+  bind('clearSampleSelection', 'click', () => { if (!state.metadataEditor) return; state.metadataEditor.selectedSamples.clear(); renderGroupSamplePicker(); });
+  bind('confirmCustomColumn', 'click', () => { if (addMetadataColumn(readValue('customColumnName'), readValue('customColumnType', 'categorical'))) { $('customColumnName').value = ''; $('customColumnForm').hidden = true; } });
   bind('runButton', 'click', runAnalysis);
   bind('refreshEnvironments', 'click', loadEnvironments);
   bind('environmentSelect', 'change', (event) => {
@@ -1019,7 +1151,7 @@ document.addEventListener('DOMContentLoaded', () => {
   bind('installButton', 'click', installQiime);
   bind('figaroInstallButton', 'click', installFigaro);
   bind('metadataPath', 'input', () => { state.metadata = readValue('metadataPath'); state.metadataValid = false; state.preflight = null; $('metadataName').textContent = state.metadata ? '等待校验服务器路径' : '未选择 metadata'; updateMetadataCapability(); updateReadiness(); });
-  bind('metadataPath', 'blur', () => validateMetadata(readValue('metadataPath'), true));
+  bind('metadataPath', 'blur', async () => { const path = readValue('metadataPath'); if (!path) return; if (await loadMetadataPreview(path, true)) await validateMetadata(path, true); else { $('metadataValidation').textContent = '无法打开这个 metadata 路径，请检查文件是否存在。'; $('metadataValidation').className = 'validation-note warn'; } });
   bind('classifierPath', 'input', () => { state.classifier = readValue('classifierPath'); state.preflight = null; $('classifierName').textContent = state.classifier ? '使用服务器路径' : '未选择分类器'; updateReadiness(); });
   bind('outputPath', 'input', () => { state.preflight = null; updateReadiness(); });
   ['primerF', 'primerR', 'truncLenF', 'truncLenR', 'minQuality', 'minFrequency'].forEach((id) => bind(id, 'input', updateReadiness));
@@ -1037,6 +1169,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const button = event.target.closest('[data-remove-group]');
     if (button) removeMetadataGroup(button.dataset.removeGroup);
   });
+  $('groupSamplePicker')?.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('[data-group-sample]');
+    if (!checkbox || !state.metadataEditor) return;
+    const index = Number(checkbox.dataset.groupSample);
+    if (checkbox.checked) state.metadataEditor.selectedSamples.add(index); else state.metadataEditor.selectedSamples.delete(index);
+  });
+  $('metadataColumnTemplates')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-column-template]');
+    if (!button) return;
+    const template = METADATA_COLUMN_TEMPLATES.find((item) => item.name === button.dataset.columnTemplate);
+    if (template && addMetadataColumn(template.name, template.type)) toast(`${template.label}字段已添加。`, true);
+  });
   $('metadataEditorTable')?.addEventListener('input', (event) => {
     const target = event.target.closest('[data-meta-row][data-meta-column]');
     if (!target || !state.metadataEditor) return;
@@ -1044,6 +1188,8 @@ document.addEventListener('DOMContentLoaded', () => {
     markMetadataChanged();
   });
   $('metadataEditorTable')?.addEventListener('change', (event) => {
+    const typeSelect = event.target.closest('[data-column-type]');
+    if (typeSelect && state.metadataEditor) { state.metadataEditor.types[Number(typeSelect.dataset.columnType)] = typeSelect.value; markMetadataChanged(); return; }
     const target = event.target.closest('[data-meta-row][data-meta-column]');
     if (!target || !state.metadataEditor) return;
     state.metadataEditor.rows[Number(target.dataset.metaRow)][target.dataset.metaColumn] = target.value;
@@ -1058,7 +1204,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('manifestEditorTable')?.addEventListener('input', (event) => {
     const target = event.target.closest('[data-manifest-row][data-manifest-column]');
-    if (target && state.manifestEditor) state.manifestEditor.rows[Number(target.dataset.manifestRow)][target.dataset.manifestColumn] = target.value;
+    if (target && state.manifestEditor) { state.manifestEditor.rows[Number(target.dataset.manifestRow)][target.dataset.manifestColumn] = target.value; state.manifestEditor.path_status = []; target.classList.toggle('is-empty', !target.value.trim()); }
   });
   $('manifestEditorTable')?.addEventListener('click', (event) => {
     const row = event.target.closest('[data-remove-manifest-row]')?.dataset.removeManifestRow;

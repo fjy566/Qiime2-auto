@@ -562,10 +562,10 @@ python qiime2_auto.py serve</code></pre>
         <p class="eyebrow">03 · EDITORS</p>
         <h2>manifest / metadata 都能预览和编辑</h2>
         <h3>manifest 编辑器</h3>
-        <p>选择或生成 manifest 后，可以修改 sample ID、R1 / R2 路径，添加或删除样本。保存时会检查空路径、重复样本和 FASTQ 是否存在，并重新计算数据类型和引用数量。</p>
+        <p>可以从零建立单端或双端 manifest，也可以打开已有文件后修改 sample ID、R1 / R2 路径并增删样本。保存时会检查空路径、重复样本和 FASTQ 是否存在，保存成功后会立即把这个文件设为本次分析输入。</p>
         <h3>metadata 分组器</h3>
-        <p>metadata 编辑器默认提供一个 group 分类列。点击“新建组”添加 control、treatment 等组，再在每个样本所在行通过下拉框选择所属组；删除组只会清空对应单元格，不会删除样本。</p>
-        <p>你还可以添加 timepoint、site、treatment、age 等列，并分别选择 categorical 或 numeric 类型。保存后的文件遵循 QIIME2 TSV metadata 形式：</p>
+        <p>metadata 编辑器默认提供一个 group 分类列。输入 control、treatment 等组名，勾选属于该组的样本，再点击一次即可创建并分配；删除组只会清空对应单元格，不会删除样本。</p>
+        <p>常用字段库提供受试者、时间点、采样部位、处理方式、批次、重复编号、年龄、pH 和温度等快捷模板，也可以添加自定义列，并在表头选择 categorical 或 numeric 类型。这些模板不是 QIIME2 强制字段，应按你的研究设计选用。保存后的文件遵循 QIIME2 TSV metadata 形式：</p>
         <pre><code>sample-id  group       age
 #q2:types  categorical numeric
 sample01   control     3

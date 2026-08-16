@@ -9,9 +9,9 @@
 - 自动识别 EMP、Casava、manifest 和混样 FASTQ 输入。
 - 从 FASTQ 文件名生成 QIIME2 manifest，修复单端/双端常见命名问题。
 - Web picker 支持一次选择多个 FASTQ，也支持选择任意后缀的 manifest、分类器 `.qza` 和 metadata 文件。
-- 根据 manifest 生成 metadata 模板，并在页面里按样本分组；支持新建/删除组、添加 categorical/numeric 列、预览、编辑和保存。
+- 根据 manifest 生成 metadata 模板，并在页面里勾选样本后批量分组；内置常用字段模板，也支持自定义 categorical/numeric 列、预览、编辑和保存。
 - metadata 遵循 QIIME2 TSV 规则：第一列是样本 ID，可选 `#q2:types` 声明类型；空单元格按缺失值处理，不会被误判成格式错误。metadata 本身是可选的，缺少时会自动跳过依赖样本分组的多样性和 ANCOM 分析。
-- manifest 支持预览、逐行编辑、添加/删除样本和保存；任意后缀都按表头内容识别，双端会统计实际引用的 R1 + R2 文件数。
+- manifest 支持从零新建或打开后编辑、单双端切换、逐行增删和“保存后立即使用”；任意后缀都按表头内容识别，双端会统计实际引用的 R1 + R2 文件数。
 - 提供 QIIME2 官方分类器目录：SILVA 138 99% 全长 16S 默认推荐，可一键下载到项目 `classifiers/` 文件夹；也保留本地 `.qza` picker。
 - 保留原来的命令行接口，并增加 `scan`、`serve`、`envs` 和 `install` 入口作为备用和排错工具。
 - 使用统一的命令执行器记录日志、报告缺失工具和分析失败原因。
@@ -41,8 +41,8 @@ python -m qiime2auto serve
 控制台里可以：
 
 1. 选择 manifest 或一次选择多个 FASTQ；查看数据类型、FASTQ 数量和双端判断。
-2. 需要时在 manifest 编辑器里预览、改路径、添加/删除样本并保存。
-3. 需要分组分析时生成或选择 metadata，在表格中为每个样本选择分组，也可以添加时间点、地点、处理方式等列。
+2. 需要时从零建立 manifest，或打开已有文件修改路径；保存后会自动成为本次输入。
+3. 需要分组分析时生成或选择 metadata：输入组名、勾选对应样本并一次分配，也可以从模板添加时间点、地点、处理方式等列。
 4. 选择 QIIME2 Conda 环境、项目内分类器和服务器输出目录；需要时一键安装 QIIME2/Figaro。
 5. 通过启动前检查后，点击一次“开始完整分析”。
 
@@ -58,7 +58,7 @@ manifest picker 不根据扩展名判断文件，`.manifest`、`.table`、`.data
 
 生成或选择 manifest 后，页面会显示可编辑表格。manifest 的 `sample-id`、`absolute-filepath`、`forward-absolute-filepath` 和 `reverse-absolute-filepath` 都可以修改；保存时会检查重复样本、空路径，并重新计算哪些 FASTQ 已找到。
 
-metadata 编辑器把样本 ID 固定为第一列。默认会有一个 `group` 分类列：点击“新建组”添加 `control`、`treatment` 等组，再在每一行的下拉框中选择。删除组会清空使用该组的样本值，但不会删除样本。其他列可以选择 `categorical` 或 `numeric` 类型；例如 `timepoint` 可作为分类列，`age` 可作为数值列。
+metadata 编辑器把样本 ID 固定为第一列。输入 `control`、`treatment` 等组名，勾选属于该组的样本，再点击一次即可创建并分配。删除组会清空使用该组的样本值，但不会删除样本。常用字段模板包括受试者、时间点、采样部位、处理方式、批次、重复编号、年龄、pH 和温度；这些是研究设计快捷项，并不是 QIIME2 强制列。也可以自定义 `categorical` 或 `numeric` 列，并在表头直接调整类型。
 
 编辑器保存的文件包含类似下面的 QIIME2 类型声明：
 

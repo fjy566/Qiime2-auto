@@ -54,7 +54,7 @@
           <div class="path-row"><input id="inputPath" type="text" placeholder="例如 /data/project/sample-sheet.weird 或 /data/fastq"><button class="icon-button" id="scanButton" title="检查路径">→</button></div>
           <div class="selected-files" id="selectedFiles"><span class="file-badge">＋</span><span><strong>还没有加入数据</strong><small>可以先选择 manifest，再选择多个 FASTQ；两次选择会自动合并。</small></span></div>
           <div class="scan-result empty" id="scanResult"><span class="scan-icon">⌁</span><span><strong>等待数据</strong><small>选择文件后，这里会告诉你识别结果和下一步。</small></span></div>
-          <div class="input-footer"><span class="inline-status" id="inputStatus">还没有扫描</span><div class="small-actions"><button class="subtle-button" id="manifestButton" disabled>由 FASTQ 生成 manifest</button></div></div>
+          <div class="input-footer"><span class="inline-status" id="inputStatus">还没有扫描</span><div class="small-actions"><button class="subtle-button" id="manifestCreateButton">＋ 从零新建 manifest</button><button class="subtle-button" id="manifestButton" disabled>由 FASTQ 自动生成</button></div></div>
         </article>
         <aside class="data-side reveal delay-2">
           <div class="metric-grid">
@@ -65,12 +65,17 @@
           <div class="quick-flow"><div class="quick-flow-title"><span>WHAT HAPPENS NEXT</span><span>自动</span></div><div><i>01</i><span>读取表头与路径</span></div><div><i>02</i><span>匹配 R1 / R2 序列</span></div><div><i>03</i><span>准备 metadata</span></div></div>
         </aside>
       </div>
-      <article class="surface editor-card reveal" id="manifestEditorCard" hidden>
-        <div class="panel-head"><div><p class="card-label">MANIFEST EDITOR</p><h3>预览并修正 manifest</h3></div><span class="soft-badge" id="manifestEditorBadge">等待 manifest</span></div>
-        <p class="help-text">你可以直接修改样本 ID 和每个 R1 / R2 路径。保存前程序会检查重复样本和空路径；路径是否存在会在表格右侧提示。</p>
+      <article class="surface editor-card manifest-workbench reveal" id="manifestEditorCard" hidden>
+        <div class="panel-head"><div><p class="card-label">MANIFEST STUDIO</p><h3>建立、检查并直接使用 manifest</h3></div><span class="soft-badge" id="manifestEditorBadge">新建文件</span></div>
+        <p class="help-text">你可以从零建立，也可以修改已打开的 manifest。双端样本需要 R1 和 R2 两条绝对路径；单端样本只需要一条。保存成功后，这个文件会立即成为本次分析输入。</p>
+        <div class="manifest-setup">
+          <label><span>测序类型</span><select id="manifestTypeSelect" class="select-field"><option value="manifest_paired">双端 paired-end（R1 + R2）</option><option value="manifest_single">单端 single-end</option></select></label>
+          <label><span>保存到服务器</span><input id="manifestSavePath" class="text-field" value="prepared/manifest.tsv" placeholder="例如 /data/project/manifest.tsv"></label>
+          <div class="manifest-guide"><b>01</b><span>填写样本与 FASTQ 路径</span><b>02</b><span>检查状态</span><b>03</b><span>保存并使用</span></div>
+        </div>
         <div class="editor-summary" id="manifestEditorSummary">选择 manifest 后显示表格。</div>
         <div class="table-scroll"><table class="editable-table" id="manifestEditorTable"></table></div>
-        <div class="editor-actions"><div class="small-actions"><button class="subtle-button" id="manifestAddRowButton">＋ 添加样本</button><button class="subtle-button" id="manifestPreviewButton">重新读取</button></div><button class="button button-dark" id="manifestSaveButton">保存 manifest</button></div>
+        <div class="editor-actions"><div class="small-actions"><button class="subtle-button" id="manifestAddRowButton">＋ 添加样本</button><button class="subtle-button" id="manifestPreviewButton">撤销未保存修改</button></div><button class="button button-dark" id="manifestSaveButton">保存并立即使用 →</button></div>
       </article>
     </section>
 
@@ -85,15 +90,31 @@
           <div class="capability-note info" id="metadataCapability"><strong>可以先不提供</strong><span>没有 metadata 时仍可做数据导入、DADA2 和基础物种分类；多样性与差异分析会自动跳过。</span></div>
           <div class="metadata-actions"><button class="button button-dark" id="metadataButton" disabled>根据 manifest 生成模板</button><span id="metadataName">未选择文件</span></div>
         </article>
-        <aside class="metadata-explain reveal delay-2"><div class="explain-number">02</div><h3>不确定怎么填？</h3><p>第一次使用可以先生成模板。打开生成的文件，把每个样本对应的 group 改成真实分组，再回来选择它。</p><div class="example-table"><div><span>sample-id</span><span>group</span></div><div><span>sample01</span><span>control</span></div><div><span>sample02</span><span>treatment</span></div></div><small>校验会检查重复 ID、空值和分组列。</small></aside>
+        <aside class="metadata-explain reveal delay-2"><div class="explain-number">02</div><h3>不确定怎么填？</h3><p>第一次使用先生成模板。页面会列出全部样本：建立 control、treatment 等组，勾选对应样本即可，不需要离开浏览器。</p><div class="example-table"><div><span>sample-id</span><span>group</span></div><div><span>sample01</span><span>control</span></div><div><span>sample02</span><span>treatment</span></div></div><small>校验会检查重复 ID、空值和字段类型。</small></aside>
       </div>
       <article class="surface editor-card metadata-editor-card reveal" id="metadataEditorCard" hidden>
-        <div class="panel-head"><div><p class="card-label">METADATA EDITOR</p><h3>给每个样本安排分组</h3></div><span class="soft-badge" id="metadataEditorBadge">等待 metadata</span></div>
-        <p class="help-text">最简单的用法：先新建几个组，再在表格里为每个样本选择组。你也可以添加时间点、地点、处理方式等列；数值列用于年龄、浓度等连续数据。</p>
-        <div class="group-toolbar"><div><span class="toolbar-label">分组值</span><div class="group-list" id="groupList"></div></div><div class="group-create"><input id="groupNameInput" class="text-field" placeholder="例如 control / treatment"><button class="subtle-button" id="addGroupButton">＋ 新建组</button></div></div>
+        <div class="panel-head"><div><p class="card-label">METADATA STUDIO</p><h3>用样本建立实验设计</h3></div><span class="soft-badge" id="metadataEditorBadge">等待 metadata</span></div>
+        <p class="help-text">先在左侧创建组并勾选属于这个组的样本；再按研究需要添加字段。QIIME 2 不强制固定列，下面只是常见、实用的模板。</p>
+        <div class="metadata-workspace">
+          <section class="group-builder">
+            <div class="workbench-heading"><span class="workbench-number">01</span><div><strong>建立分组</strong><small>输入组名，再选择属于它的样本</small></div></div>
+            <input id="groupNameInput" class="text-field" placeholder="组名，例如 control / treatment">
+            <div class="sample-tools"><input id="groupSampleSearch" class="text-field" placeholder="搜索样本 ID"><button class="micro-button" id="selectUnassignedSamples" type="button">只选未分组</button><button class="micro-button" id="selectAllSamples" type="button">全选</button><button class="micro-button" id="clearSampleSelection" type="button">清空</button></div>
+            <div class="sample-picker" id="groupSamplePicker"></div>
+            <button class="button button-dark assign-button" id="addGroupButton">创建组并分配所选样本</button>
+            <div class="group-overview"><span class="toolbar-label">现有组别</span><div class="group-list" id="groupList"></div></div>
+          </section>
+          <section class="column-library">
+            <div class="workbench-heading"><span class="workbench-number">02</span><div><strong>添加研究信息</strong><small>选择常用字段，类型已替你设置</small></div></div>
+            <div class="column-templates" id="metadataColumnTemplates"></div>
+            <button class="subtle-button custom-column-toggle" id="metadataAddColumnButton">＋ 自定义字段</button>
+            <div class="custom-column-form" id="customColumnForm" hidden><input id="customColumnName" class="text-field" placeholder="自定义列名"><select id="customColumnType" class="select-field"><option value="categorical">分类 categorical</option><option value="numeric">数值 numeric</option></select><button class="button button-dark" id="confirmCustomColumn">添加</button></div>
+            <div class="qiime-note"><span>i</span><p><strong>分类还是数值？</strong>组别、时间点、地点通常选“分类”；年龄、pH、温度等连续测量值选“数值”。</p></div>
+          </section>
+        </div>
         <div class="editor-summary" id="metadataEditorSummary">选择 metadata 后显示表格。</div>
         <div class="table-scroll"><table class="editable-table" id="metadataEditorTable"></table></div>
-        <div class="editor-actions"><div class="small-actions"><button class="subtle-button" id="metadataAddColumnButton">＋ 添加列</button><button class="subtle-button" id="metadataPreviewButton">重新读取</button></div><div class="small-actions"><button class="subtle-button" id="metadataValidateButton">校验</button><button class="button button-dark" id="metadataSaveButton">保存 metadata</button></div></div>
+        <div class="editor-actions"><div class="small-actions"><button class="subtle-button" id="metadataPreviewButton">撤销未保存修改</button></div><div class="small-actions"><button class="subtle-button" id="metadataValidateButton">校验</button><button class="button button-dark" id="metadataSaveButton">保存并用于分析 →</button></div></div>
       </article>
     </section>
 
