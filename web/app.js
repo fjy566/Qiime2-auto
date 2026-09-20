@@ -230,6 +230,7 @@ async function uploadFiles(input, kind) {
     toast(kind === 'fastq' ? 'FASTQ 已加入同一个数据包。' : 'manifest 已加入，程序会自动匹配同目录序列。', true);
   } catch (error) {
     toast(`文件处理失败：${error.message}`);
+    return false;
   }
 }
 
@@ -889,10 +890,15 @@ async function installFigaro() {
 }
 
 function closeDirectoryPicker() {
-  $('directoryModal').hidden = true;
+  const modal = $('directoryModal');
+  document.body.style.overflow = '';
+  const finish = () => { modal.hidden = true; state.pickerReturnFocus?.focus(); };
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { finish(); return; }
+  modal.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 140 }).finished.then(finish);
 }
 
 function openPathPicker(config) {
+  state.pickerReturnFocus = document.activeElement;
   state.pathPicker = { mode: 'file', accept: [], ...config };
   const currentValue = config.value ?? (config.targetId ? readValue(config.targetId) : '');
   $('directoryModalTitle').textContent = config.title || (state.pathPicker.mode === 'directory' ? '选择服务器目录' : '选择服务器文件');
@@ -911,7 +917,10 @@ async function loadDirectories(path = '') {
     const includeFiles = state.pathPicker?.mode !== 'directory' && state.pathPicker?.mode !== 'save';
     const data = await api(`/api/directories?path=${encodeURIComponent(path)}&include_files=${includeFiles ? '1' : '0'}`);
     state.directory = data;
+    const opening = $('directoryModal').hidden;
     $('directoryModal').hidden = false;
+    document.body.style.overflow = 'hidden';
+    if (opening) $('directoryCloseButton').focus();
     $('directoryPathInput').value = data.current || '';
     $('directoryCurrentLabel').textContent = data.current || '';
     $('directoryParentButton').disabled = !data.parent;
@@ -1153,6 +1162,7 @@ function updateReadiness(requestPlan = true) {
   $('runHint').textContent = ready ? (hasNotes ? '可以运行；页面会按提示自动跳过不具备条件的步骤。' : '所有必要信息已准备好，点击一次即可启动完整分析。') : '还差一步：按照上面的提示补齐必要信息。';
   $('readyBadge').textContent = ready ? (hasNotes ? 'READY · WITH NOTES' : 'READY') : 'NEEDS SETUP';
   $('readyBadge').className = `ready-badge ${ready ? (hasNotes ? 'info' : 'good') : 'warn'}`;
+  updateMissionProgress();
   if (requestPlan) schedulePreflight();
 }
 
@@ -1219,7 +1229,122 @@ async function runAnalysis() {
 
 function bind(id, event, handler) { $(id)?.addEventListener(event, handler); }
 
+// Workspace controls share the existing analysis state and API operations.
+function updateMissionProgress() {
+  const checks = [Boolean(state.scan?.data_type && state.inputPath), Boolean(state.environmentReady),
+    isChecked('skipTaxonomy') || Boolean(state.classifier || readValue('classifierPath'))];
+  const completed = checks.filter(Boolean).length;
+  if ($('missionProgressValue')) $('missionProgressValue').textContent = `${completed} / ${checks.length}`;
+  if ($('missionProgressBar')) $('missionProgressBar').style.width = `${completed / checks.length * 100}%`;
+}
+
+const SETTINGS_FIELDS = ['primerF', 'primerR', 'truncLenF', 'truncLenR', 'minQuality', 'minFrequency', 'phredOffset', 'samplingDepth'];
+const SETTINGS_TOGGLES = ['noTrim', 'noFilter', 'noFigaro', 'skipTaxonomy', 'skipDiversity', 'skipAncom'];
+function exportSettings() {
+  const settings = { format: 'qiime2auto-parameters', version: 1, samplingMode: selectedSamplingMode(),
+    fields: Object.fromEntries(SETTINGS_FIELDS.map(id => [id, $(id).value])),
+    toggles: Object.fromEntries(SETTINGS_TOGGLES.map(id => [id, id === 'skipAncom' ? Boolean(state.ancomChoice) : $(id).checked])) };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' }));
+  const link = document.createElement('a'); link.href = url; link.download = 'qiime2auto-parameters.json'; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast('参数已导出；不包含文件路径和序列数据。', true);
+}
+async function importSettings(file) {
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.format !== 'qiime2auto-parameters' || data.version !== 1 || !data.fields || !data.toggles || !['auto', 'custom'].includes(data.samplingMode)) throw new Error('请选择由本工作台导出的参数文件。');
+    for (const id of SETTINGS_FIELDS) {
+      const value = data.fields[id]; const element = $(id);
+      if (typeof value !== 'string') throw new Error(`参数 ${id} 格式错误。`);
+      if (element.type === 'number' && (value !== '' || id !== 'samplingDepth' || data.samplingMode === 'custom') && (!value || !Number.isInteger(Number(value)) || Number(value) < Number(element.min))) throw new Error(`参数 ${id} 需要符合最小值要求的整数。`);
+    }
+    if (!['33', '64'].includes(data.fields.phredOffset) || SETTINGS_TOGGLES.some(id => typeof data.toggles[id] !== 'boolean')) throw new Error('参数文件中的选项无效。');
+    SETTINGS_FIELDS.forEach(id => { $(id).value = data.fields[id]; });
+    SETTINGS_TOGGLES.forEach(id => { $(id).checked = data.toggles[id]; });
+    state.ancomChoice = data.toggles.skipAncom;
+    document.querySelector(`input[name="samplingMode"][value="${data.samplingMode}"]`).checked = true;
+    state.preflight = null; updateSamplingMode(); updateReadiness();
+    $('configuration').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    toast('参数已应用，请结合测序质量再次确认。', true);
+  } catch (error) { toast(`导入失败：${error.message}`); }
+  finally { $('importSettings').value = ''; }
+}
+
+function initFrontendMotion() {
+  const sectionObserver = new IntersectionObserver(entries => {
+    const current = entries.filter(entry => entry.isIntersecting).sort((a,b) => b.intersectionRatio-a.intersectionRatio)[0];
+    if (!current) return;
+    document.querySelectorAll('[data-nav-section]').forEach(item => {
+      const active = item.dataset.navSection === current.target.id;
+      item.classList.toggle('active', active);
+      if (active) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');
+    });
+  }, { rootMargin: '-120px 0px -50% 0px', threshold: 0 });
+  ['workspace', 'metadata-section', 'configuration', 'run-section'].forEach(id => sectionObserver.observe($(id)));
+  const setTheme = theme => {
+    document.body.dataset.theme = theme;
+    $('themeButton').setAttribute('aria-label', theme === 'dark' ? '切换到浅色主题' : '切换到深色主题');
+    $('themeButton').textContent = theme === 'dark' ? '☀' : '◐';
+  };
+  try { setTheme(localStorage.getItem('qiime2auto-theme') === 'dark' ? 'dark' : 'light'); } catch { setTheme('light'); }
+  bind('themeButton', 'click', () => {
+    const theme = document.body.dataset.theme === 'dark' ? 'light' : 'dark'; setTheme(theme);
+    try { localStorage.setItem('qiime2auto-theme', theme); } catch { /* Theme still works for this session. */ }
+  });
+  bind('focusModeButton', 'click', () => {
+    const active = document.body.classList.toggle('focus-mode');
+    $('focusModeButton').setAttribute('aria-pressed', String(active));
+    $('focusModeButton').textContent = active ? '退出专注' : '专注';
+  });
+  ['dockHelpButton', 'helpButton'].forEach(id => bind(id, 'click', () => $('guideDialog').showModal()));
+  bind('closeGuide', 'click', () => $('guideDialog').close());
+  bind('exportSettings', 'click', exportSettings);
+  bind('importSettings', 'change', event => importSettings(event.target.files[0]));
+  const dropzone = $('dataDropzone'); let depth = 0;
+  dropzone.addEventListener('dragenter', event => { event.preventDefault(); depth++; dropzone.classList.add('is-dragging'); });
+  dropzone.addEventListener('dragover', event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; });
+  dropzone.addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; dropzone.classList.remove('is-dragging'); } });
+  dropzone.addEventListener('drop', event => { event.preventDefault(); depth = 0; dropzone.classList.remove('is-dragging'); handleDroppedFiles(event.dataTransfer.files); });
+  document.addEventListener('click', event => {
+    const button = event.target.closest('button, .button'); if (!button || button.disabled) return;
+    button.classList.remove('ripple'); requestAnimationFrame(() => button.classList.add('ripple'));
+    setTimeout(() => button.classList.remove('ripple'), 350);
+  });
+  document.addEventListener('keydown', event => {
+    if (!$('directoryModal').hidden) {
+      if (event.key === 'Escape') { event.preventDefault(); closeDirectoryPicker(); }
+      if (event.key === 'Tab') {
+        const elements = [...$('directoryModal').querySelectorAll('button:not(:disabled), input:not(:disabled)')].filter(el => el.getClientRects().length);
+        const first = elements[0], last = elements.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+      return;
+    }
+    if (event.key === '/' && !$('guideDialog').open && !event.ctrlKey && !event.metaKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) { event.preventDefault(); $('inputPath').focus(); }
+  });
+  updateMissionProgress();
+}
+
+async function handleDroppedFiles(fileList) {
+  if (state.dropUploading) { toast('当前文件仍在上传，请稍后再添加。'); return; }
+  const files = [...fileList]; if (!files.length) return;
+  const fastqs = files.filter(file => /\.(fastq|fq)(\.gz)?$/i.test(file.name));
+  const manifests = files.filter(file => !fastqs.includes(file));
+  if (manifests.length > 1) { toast('每次请拖入一个 manifest；FASTQ 可以多选。'); return; }
+  state.dropUploading = true;
+  $('dataDropzone').setAttribute('aria-busy', 'true');
+  const hint = $('dropzoneHint').querySelector('strong'); hint.textContent = `正在上传 ${files.length} 个文件…`;
+  try {
+    // Await each upload so both kinds use the same server upload session.
+    if (manifests.length && await uploadFiles({ files: manifests, value: '' }, 'manifest') === false) return;
+    if (fastqs.length) await uploadFiles({ files: fastqs, value: '' }, 'fastq');
+  } finally { state.dropUploading = false; $('dataDropzone').removeAttribute('aria-busy'); hint.textContent = '把 FASTQ / manifest 拖到这里'; }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  initFrontendMotion();
   renderSelectedFiles();
   updateSamplingMode();
   bind('scanButton', 'click', scan);
@@ -1354,3 +1479,4 @@ document.addEventListener('DOMContentLoaded', () => {
   loadClassifiers();
   checkHealth();
 });
+

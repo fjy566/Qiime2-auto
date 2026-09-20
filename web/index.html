@@ -3,35 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#071211">
-  <title>QIIME2 Auto · 一键 16S 分析</title>
+  <meta name="theme-color" content="#081510">
+  <meta name="description" content="QIIME2 Auto：面向本地数据的 16S rRNA 可视化分析工作台">
+  <title>QIIME2 Auto · 16S 分析工作台</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="grain" aria-hidden="true"></div>
+  <a class="skip-link" href="#workspace">跳转到数据准备</a>
   <div class="background-orb orb-one" aria-hidden="true"></div>
   <div class="background-orb orb-two" aria-hidden="true"></div>
 
   <header class="topbar">
     <a class="brand" href="/" aria-label="QIIME2 Auto 首页"><span class="brand-mark">◈</span><span>QIIME2 <em>AUTO</em></span></a>
-    <div class="top-meta"><span class="status-dot" id="healthDot"></span><span id="healthText">正在连接本地服务</span><span class="version">ONE-CLICK · v1.1</span></div>
+    <div class="top-meta"><span class="status-dot" id="healthDot"></span><span id="healthText">正在连接本地服务</span><span class="version">ONE-CLICK · v1.1</span><button class="top-action" id="focusModeButton" type="button" aria-pressed="false" title="切换专注模式">专注</button><button class="top-action icon-top-action" id="themeButton" type="button" aria-label="切换主题" title="切换主题">◐</button></div>
   </header>
 
   <main>
-    <section class="hero reveal">
-      <div class="hero-copy">
-        <p class="eyebrow">16S rRNA · VISUAL PIPELINE</p>
-        <h1>选好数据，<span>一键完成分析。</span></h1>
-        <p class="lede">你不需要记命令。QIIME2 Auto 会帮你整理 FASTQ、读取 manifest、校验 metadata、选择 Conda 环境，再把完整分析交给 QIIME2。</p>
-        <div class="hero-actions"><a href="#workspace" class="button button-primary">开始准备数据 <span>↓</span></a><a href="README.html" class="text-link">阅读使用说明 ↗</a></div>
-        <div class="hero-trust"><span>LOCAL ONLY</span><span>NO COMMAND REQUIRED</span><span>CLI 保留</span></div>
-      </div>
-      <div class="hero-visual" aria-hidden="true">
-        <div class="visual-grid"></div><div class="visual-ring ring-a"></div><div class="visual-ring ring-b"></div>
-        <div class="visual-core"><span>16S</span><small>READY<br>TO RUN</small></div>
-        <div class="signal signal-a"><i></i><span>DATA</span></div><div class="signal signal-b"><i></i><span>QIIME2</span></div><div class="signal signal-c"><i></i><span>REPORT</span></div>
-      </div>
+    <section class="workbench-intro">
+      <div><p class="eyebrow">MICROBIOME WORKSPACE / 16S rRNA</p><h1>从序列，到发现<span>。</span></h1><p>把数据准备好，让每一步分析都有据可循。完成检查后，一键完成分析。</p></div>
+      <div class="workspace-actions"><button class="subtle-button" id="exportSettings">导出参数</button><label class="subtle-button import-settings">导入参数<input type="file" id="importSettings" accept=".json"></label><button class="button button-primary" id="helpButton">使用指南 ↗</button></div>
     </section>
+    <aside class="mission-dock" aria-label="工作台导航">
+      <div class="mission-progress"><span class="mission-progress-label">准备就绪</span><strong id="missionProgressValue">0%</strong><div class="mission-progress-track"><i id="missionProgressBar"></i></div></div>
+      <nav class="mission-nav" aria-label="快速跳转"><a class="mission-nav-item active" href="#workspace" data-nav-section="workspace"><b>01</b><span>数据</span></a><a class="mission-nav-item" href="#metadata-section" data-nav-section="metadata-section"><b>02</b><span>设计</span></a><a class="mission-nav-item" href="#configuration" data-nav-section="configuration"><b>03</b><span>环境</span></a><a class="mission-nav-item" href="#run-section" data-nav-section="run-section"><b>04</b><span>运行</span></a></nav>
+      <button class="dock-help" id="dockHelpButton" type="button"><span>?</span><span>需要帮助？</span></button>
+    </aside>
 
     <section class="workflow-strip reveal" aria-label="分析流程">
       <div class="workflow-line"></div>
@@ -44,13 +40,14 @@
     <section class="section" id="workspace">
       <div class="section-heading reveal"><div><p class="eyebrow">01 / DATA PACKAGE</p><h2>先把数据放进来</h2></div><p class="section-note">manifest 和 FASTQ 可以分开选择。无论先后，程序都会把它们放进同一个数据包并自动匹配。</p></div>
       <div class="data-layout">
-        <article class="surface data-panel reveal delay-1">
+        <article class="surface data-panel reveal delay-1" id="dataDropzone">
           <div class="panel-head"><div><p class="card-label">INPUT</p><h3>选择数据文件</h3></div><span class="soft-badge">自动识别</span></div>
+          <div class="dropzone-hint" id="dropzoneHint" aria-live="polite"><span class="dropzone-pulse"></span><span><strong>把 FASTQ / manifest 拖到这里</strong><small>也可以使用下面两个按钮；大文件建议填写服务器路径</small></span></div>
           <div class="picker-deck">
             <label class="picker-tile"><input id="manifestPicker" type="file"><span class="picker-symbol">≋</span><strong>选择 manifest</strong><small>任意后缀都可以，按内容读取</small></label>
             <label class="picker-tile picker-tile-accent"><input id="fastqPicker" type="file" multiple accept=".fastq,.fq,.fastq.gz,.fq.gz,.gz"><span class="picker-symbol">＋</span><strong>选择多个 FASTQ</strong><small>可一次选择 2、4 或更多序列文件</small></label>
           </div>
-          <div class="path-label"><span>服务器路径（大文件推荐）</span><span class="path-hint">Linux 路径</span></div>
+          <div class="path-label"><span>本机 / 服务器路径（大文件推荐）</span><span class="path-hint">服务所在机器</span></div>
           <div class="path-row"><input id="inputPath" type="text" placeholder="例如 /data/project/sample-sheet.weird 或 /data/fastq"><button class="path-picker-button" id="inputPathPickerButton" type="button">选择</button><button class="icon-button" id="scanButton" title="检查路径">→</button></div>
           <div class="selected-files" id="selectedFiles"><span class="file-badge">＋</span><span><strong>还没有加入数据</strong><small>可以先选择 manifest，再选择多个 FASTQ；两次选择会自动合并。</small></span></div>
           <div class="scan-result empty" id="scanResult"><span class="scan-icon">⌁</span><span><strong>等待数据</strong><small>选择文件后，这里会告诉你识别结果和下一步。</small></span></div>
@@ -161,7 +158,7 @@
       </div>
 
       <article class="surface options-card reveal delay-3">
-        <div class="panel-head"><div><p class="card-label">ANALYSIS OPTIONS</p><h3>分析参数</h3></div><span class="soft-badge">默认值可直接运行</span></div>
+        <div class="panel-head"><div><p class="card-label">ANALYSIS OPTIONS</p><h3>分析参数</h3></div><span class="soft-badge">请按测序质量调整</span></div>
         <div class="option-group sampling-group" id="samplingGroup"><div class="option-copy"><strong>采样深度</strong><p>每个样本保留多少条序列用于公平比较。自动模式会根据实际测序量选择共同深度。</p></div><div class="sampling-control"><div class="segmented"><label><input type="radio" name="samplingMode" value="auto" checked><span>自动推荐</span></label><label><input type="radio" name="samplingMode" value="custom"><span>我来定义</span></label></div><input id="samplingDepth" class="text-field" type="number" min="1" placeholder="例如 10000" disabled><p class="field-help" id="samplingDepthHelp">自动模式会先查看每个样本的有效序列量，再选择尽量保留样本的共同深度；第一次分析推荐使用它。</p></div></div>
         <div class="parameter-grid"><label>正向引物<input id="primerF" class="text-field" placeholder="可留空，例如 GTGCCAGCMGCCGCGGTAA"><small>只有需要去引物时填写</small></label><label>反向引物<input id="primerR" class="text-field" placeholder="双端数据再填写"><small>paired-end 数据的反向引物</small></label><label>正向截断长度<input id="truncLenF" class="text-field" type="number" value="250" min="1"><small>默认 250 bp</small></label><label>反向截断长度<input id="truncLenR" class="text-field" type="number" value="220" min="1"><small>默认 220 bp</small></label><label>最低质量<input id="minQuality" class="text-field" type="number" value="20" min="0"><small>低于此值的碱基会被过滤</small></label><label>最低特征频率<input id="minFrequency" class="text-field" type="number" value="10" min="0"><small>过滤极低频特征</small></label><label>Phred 偏移<select id="phredOffset" class="select-field"><option value="33">33（常见）</option><option value="64">64</option></select><small>不确定时保留 33</small></label><label>结果保存到<div class="path-row option-path"><input id="outputPath" class="text-field" value="qiime2_analysis" placeholder="例如 /data/results"><button class="subtle-button" id="outputPickerButton" type="button">选择目录</button></div><small>服务器上的输出目录；程序会自动创建分析子目录</small></label></div>
         <div class="toggle-grid"><label class="toggle-line"><input id="noTrim" type="checkbox"><span class="fake-check"></span><span><strong>跳过引物去除</strong><small>不使用 cutadapt</small></span></label><label class="toggle-line"><input id="noFilter" type="checkbox"><span class="fake-check"></span><span><strong>跳过质量过滤</strong><small>保留原始质量</small></span></label><label class="toggle-line"><input id="noFigaro" type="checkbox"><span class="fake-check"></span><span><strong>跳过 Figaro</strong><small>使用手动截断值</small></span></label><label class="toggle-line"><input id="skipDiversity" type="checkbox"><span class="fake-check"></span><span><strong>跳过多样性</strong><small>不生成 core metrics，采样深度将停用</small></span></label><label class="toggle-line"><input id="skipAncom" type="checkbox"><span class="fake-check"></span><span><strong>跳过 ANCOM</strong><small id="skipAncomHelp">不做差异分析</small></span></label></div>
@@ -183,6 +180,8 @@
   <div class="toast" id="toast" role="status" aria-live="polite"><span class="toast-mark">!</span><span id="toastText"></span></div>
   <div class="modal-backdrop" id="directoryModal" hidden><section class="directory-modal" role="dialog" aria-modal="true" aria-labelledby="directoryModalTitle"><div class="panel-head"><div><p class="card-label">SERVER PATH PICKER</p><h3 id="directoryModalTitle">选择服务器路径</h3></div><button class="icon-button" id="directoryCloseButton" type="button" aria-label="关闭">×</button></div><p class="help-text" id="directoryModalHelp">浏览当前服务所在机器的目录和文件。</p><div class="directory-path-row"><input id="directoryPathInput" class="text-field" placeholder="/data"><button class="subtle-button" id="directoryGoButton" type="button">打开</button></div><div class="directory-toolbar"><button class="subtle-button" id="directoryParentButton" type="button">↑ 上一级</button><span id="directoryCurrentLabel"></span></div><div class="directory-list" id="directoryList"></div><div class="editor-actions"><span class="inline-status" id="directoryPickerHint">只会选择路径，不会修改文件。</span><button class="button button-dark" id="directoryChooseButton" type="button">使用当前目录</button></div></section></div>
   <footer><span>QIIME2 AUTO</span><span>一键运行 · 本地优先 · <a href="README.html">使用说明</a> · <a href="README.md">CLI 备用入口</a></span></footer>
+  <dialog id="guideDialog" aria-labelledby="guideTitle"><div class="panel-head"><div><p class="card-label">QUICK START</p><h2 id="guideTitle">第一次分析，从这里开始</h2></div><button class="icon-button" id="closeGuide" aria-label="关闭指南">×</button></div><ol class="guide-list"><li><strong>导入测序数据</strong><p>拖入 FASTQ 或一个 manifest；大文件使用服务器路径，减少传输等待。</p></li><li><strong>整理实验分组</strong><p>从输入读取样本，再添加组别与研究信息。不提供 metadata 时，分组相关分析会自动跳过。</p></li><li><strong>确认环境与参数</strong><p>完整分析需要 Linux + QIIME2。截断长度需要结合实际测序质量设置，不能仅依赖默认值。</p></li><li><strong>检查，再运行</strong><p>在启动前检查中查看阻碍项与自动跳过的步骤，再提交分析。</p></li></ol><p class="help-text">快捷键：/ 定位数据路径 · Esc 关闭弹窗。参数导出不包含序列数据。</p><a class="button button-primary" href="/README.html" target="_blank" rel="noopener">阅读完整说明 ↗</a></dialog>
   <script src="/app.js"></script>
 </body>
 </html>
+

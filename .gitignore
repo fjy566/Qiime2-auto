@@ -15,3 +15,7 @@ temp_export/
 .qiime2auto_uploads/
 classifiers/*.qza
 classifiers/.*.part
+
+# Local development server logs
+qiime2auto-web.log
+qiime2auto-web.err.log
